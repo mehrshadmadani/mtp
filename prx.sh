@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTProto Proxy Multi-Instance Manager v5.1 (Final - C Version, All Architectures)
+# MTProto Proxy Multi-Instance Manager v5.2 (Final - C Version, Universal Compile)
 # Manages multiple instances of the official C proxy from https://github.com/TelegramMessenger/MTProxy
 #
 
@@ -55,13 +55,9 @@ check_and_compile_source() {
 
         cd "$SRC_PATH/"
 
-        # --- THE FIX: Remove CPU-specific optimizations for ARM/other architectures ---
-        info "Applying compatibility patch to Makefile for this server's CPU architecture..."
-        sed -i 's/-mpclmul -march=core2 -mfpmath=sse -mssse3//g' Makefile
-
-        # --- THE FIX: Remove CPU-specific optimizations for ARM/other architectures ---
-        info "Applying compatibility patch to Makefile for this server's CPU architecture..."
-        sed -i 's/-mpclmul -march=core2 -mfpmath=sse -mssse3//g' Makefile
+        # --- THE FINAL FIX: Replace the entire CFLAGS line with a generic one ---
+        info "Applying universal compatibility patch to Makefile for this server's CPU..."
+        sed -i 's/^CFLAGS = .*/CFLAGS = -O3 -std=gnu11 -Wall/g' Makefile
 
         info "Compiling source..."
         make
@@ -87,7 +83,7 @@ get_proxy_list() {
 show_main_menu() {
     clear
     echo -e "${CY}╔══════════════════════════════════════╗${NC}"
-    echo -e "${CY}║ MTProto Proxy Manager v5.1 (C Ver.)  ║${NC}"
+    echo -e "${CY}║ MTProto Proxy Manager v5.2 (C Ver.)  ║${NC}"
     echo -e "${CY}╚══════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${BL}1)${NC} Manage Existing Proxies"
