@@ -144,8 +144,7 @@ list_and_select_proxy() {
         # Validate the selection
         if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#proxies[@]}" ]; then
             SELECTED_PROXY="${proxies[$((choice-1))]}"
-            # Here we will call the management menu for the selected proxy
-            # For now, let's just show a message
+            # In the next step, we will call the management menu for the selected proxy
             clear
             echo -e "You selected: ${GR}${SELECTED_PROXY}${NC}"
             echo "The management menu for this proxy will be implemented in the next step."
