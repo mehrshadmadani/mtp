@@ -11,7 +11,7 @@ YE='\033[0;33m'
 BL='\033[0;34m'
 CY='\033[0;36m'
 NC='\033[0m'
-
+PROXY_DELETED="false"
 # --- Global Variables ---
 SELF="$0"
 WORKDIR=$(pwd)
@@ -145,14 +145,38 @@ list_and_select_proxy() {
         if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#proxies[@]}" ]; then
             SELECTED_PROXY="${proxies[$((choice-1))]}"
             # In the next step, we will call the management menu for the selected proxy
-            clear
-            echo -e "You selected: ${GR}${SELECTED_PROXY}${NC}"
-            echo "The management menu for this proxy will be implemented in the next step."
-            press_enter_to_continue
+            show_proxy_submenu
         else
             echo -e "${RED}Invalid selection!${NC}"
             sleep 1
         fi
+    done
+}
+
+show_proxy_submenu() {
+    PROXY_DELETED="false" # Reset the flag
+    while true; do
+        clear
+        echo -e "${CY}Managing Proxy: ${GR}${SELECTED_PROXY}${NC}"
+        echo "----------------------------------------"
+        echo -e "${BL}1)${NC} View Proxy Details"
+        echo -e "${BL}2)${NC} Manage Proxy Service (Start/Stop/Logs)"
+        echo -e "${BL}3)${NC} Show Proxy Links"
+        echo -e "${BL}4)${RED} Delete Proxy${NC}"
+        echo "----------------------------------------"
+        echo -e "${BL}0)${NC} Back to Proxy List"
+        echo ""
+
+        read -p "Choose an action: " choice < /dev/tty
+
+        case $choice in
+            1) view_proxy_details ;;
+            2) manage_proxy_service ;;
+            3) show_proxy_links ;;
+            4) delete_proxy; [[ "$PROXY_DELETED" == "true" ]] && break ;; # Break if proxy was deleted
+            0) break ;;
+            *) echo -e "${RED}Invalid selection!${NC}"; sleep 1 ;;
+        esac
     done
 }
 
@@ -267,81 +291,75 @@ create_new_proxy() {
     press_enter_to_continue
 }
 
-delete_proxy() {
-    if select_proxy; then
-        read -p "Are you sure you want to PERMANENTLY delete '${SELECTED_PROXY}'? [y/N] " confirm < /dev/tty
-        if [[ "$confirm" =~ ^[yY]$ ]]; then
-            local service_name="mtproto-proxy-${SELECTED_PROXY}"
-            local service_path="/etc/systemd/system/${service_name}.service"
-            
-            info "Stopping and disabling service..."
-            sudo systemctl stop "$service_name"
-            sudo systemctl disable "$service_name"
-            
-            info "Removing service file..."
-            sudo rm -f "$service_path"
-            sudo systemctl daemon-reload
-            
-            info "Removing proxy directory..."
-            sudo rm -rf "${PROXY_BASE_DIR}/${SELECTED_PROXY}"
-            
-            info "Proxy '${SELECTED_PROXY}' has been deleted."
-        else
-            info "Deletion cancelled."
-        fi
-        press_enter_to_continue
-    fi
-}
-
+# NEW version of view_proxy_details
 view_proxy_details() {
-    if select_proxy; then
-        clear
-        echo -e "${CY}--- Details for ${SELECTED_PROXY} ---${NC}"
-        local info_file="${PROXY_BASE_DIR}/${SELECTED_PROXY}/info.txt"
-        if [ -f "$info_file" ]; then
-            cat "$info_file"
-        else
-            error "Info file not found!"
-        fi
-        press_enter_to_continue
+    clear
+    echo -e "${CY}--- Details for ${SELECTED_PROXY} ---${NC}"
+    local info_file="${PROXY_BASE_DIR}/${SELECTED_PROXY}/info.txt"
+    if [ -f "$info_file" ]; then
+        cat "$info_file"
+    else
+        error "Info file not found!"
     fi
+    press_enter_to_continue
 }
 
+# NEW version of manage_proxy_service
 manage_proxy_service() {
-    if select_proxy; then
-        clear
-        echo -e "${CY}--- Manage Service for ${SELECTED_PROXY} ---${NC}"
-        echo -e "${BL}1)${NC} Start"
-        echo -e "${BL}2)${NC} Stop"
-        echo -e "${BL}3)${NC} Restart"
-        echo -e "${BL}4)${NC} View Status/Logs"
-        echo -e "Press Enter to cancel."
-        echo ""
-        read -p "Choose option: " choice < /dev/tty
+    clear
+    echo -e "${CY}--- Manage Service for ${SELECTED_PROXY} ---${NC}"
+    echo -e "${BL}1)${NC} Start"
+    echo -e "${BL}2)${NC} Stop"
+    echo -e "${BL}3)${NC} Restart"
+    echo -e "${BL}4)${NC} View Status/Logs"
+    echo ""
+    read -p "Choose option (or Enter to cancel): " choice < /dev/tty
 
-        local service_name="mtproto-proxy-${SELECTED_PROXY}"
-        case $choice in
-            1) sudo systemctl start "$service_name"; info "Starting...";;
-            2) sudo systemctl stop "$service_name"; info "Stopping...";;
-            3) sudo systemctl restart "$service_name"; info "Restarting...";;
-            4) sudo journalctl -u "$service_name" -f --no-pager; return;; # No need to press enter after logs
-            *) info "Cancelled."; press_enter_to_continue; return;;
-        esac
-        sleep 1
-        sudo systemctl status "$service_name" --no-pager
-        press_enter_to_continue
-    fi
+    local service_name="mtproto-proxy-${SELECTED_PROXY}"
+    case $choice in
+        1) sudo systemctl start "$service_name"; info "Starting...";;
+        2) sudo systemctl stop "$service_name"; info "Stopping...";;
+        3) sudo systemctl restart "$service_name"; info "Restarting...";;
+        4) sudo journalctl -u "$service_name" -f --no-pager; return;;
+        *) info "Cancelled."; press_enter_to_continue; return;;
+    esac
+    sleep 1
+    sudo systemctl status "$service_name" --no-pager
+    press_enter_to_continue
 }
 
+# NEW version of show_proxy_links
 show_proxy_links() {
-    if select_proxy; then
-        local info_file="${PROXY_BASE_DIR}/${SELECTED_PROXY}/info.txt"
-        if [ -f "$info_file" ]; then
-            source "$info_file"
-            do_print_links # This now uses the sourced variables
-        else
-            error "Could not find info file for ${SELECTED_PROXY}!"
-        fi
+    local info_file="${PROXY_BASE_DIR}/${SELECTED_PROXY}/info.txt"
+    if [ -f "$info_file" ]; then
+        source "$info_file"
+        do_print_links
+    else
+        error "Could not find info file for ${SELECTED_PROXY}!"
+    fi
+    press_enter_to_continue
+}
+
+# NEW version of delete_proxy
+delete_proxy() {
+    read -p "Are you sure you want to PERMANENTLY delete '${SELECTED_PROXY}'? [y/N] " confirm < /dev/tty
+    if [[ "$confirm" =~ ^[yY]$ ]]; then
+        local service_name="mtproto-proxy-${SELECTED_PROXY}"
+        info "Stopping and disabling service..."
+        sudo systemctl stop "$service_name"
+        sudo systemctl disable "$service_name"
+        info "Removing service file..."
+        sudo rm -f "/etc/systemd/system/${service_name}.service"
+        sudo systemctl daemon-reload
+        info "Removing proxy directory..."
+        sudo rm -rf "${PROXY_BASE_DIR}/${SELECTED_PROXY}"
+        info "Proxy '${SELECTED_PROXY}' has been deleted."
+        press_enter_to_continue
+        # We need to exit the submenu loop after deletion
+        # This is a bit of a trick: we'll use a global flag
+        PROXY_DELETED="true"
+    else
+        info "Deletion cancelled."
         press_enter_to_continue
     fi
 }
@@ -492,18 +510,17 @@ main() {
 
     while true; do
         show_main_menu
-        read -p "Choose option [1-7]: " choice < /dev/tty
+        # Prompt changed to [1-3] to match the new menu
+        read -p "Choose option [1-3]: " choice < /dev/tty
+        # Case statement simplified for the new menu
         case $choice in
             1) list_and_select_proxy ;;
             2) create_new_proxy ;;
-            3) view_proxy_details ;;
-            4) manage_proxy_service ;;
-            5) show_proxy_links ;;
-            6) delete_proxy ;;
-            7) echo "Goodbye!"; exit 0 ;;
+            3) echo "Goodbye!"; exit 0 ;;
             *) echo -e "${RED}Invalid option!${NC}"; sleep 1 ;;
         esac
     done
 }
 
+# This line calls the main function to start the script
 main
