@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTProto Proxy Multi-Instance Manager v2.1
+# MTProto Proxy Multi-Instance Manager v3.0 (Final)
 # Manages multiple instances of mtproto-proxy from https://github.com/seriyps/mtproto_proxy
 #
 
@@ -42,7 +42,11 @@ press_enter_to_continue() {
     read -p "Press Enter to continue..." < /dev/tty
 }
 
-# --- New Management Functions ---
+to_hex() {
+    od -A n -t x1 -w128 | sed 's/ //g'
+}
+
+# --- Core Management Functions ---
 
 init_proxy_system() {
     if [ ! -d "$PROXY_BASE_DIR" ]; then
@@ -85,10 +89,12 @@ get_proxy_list() {
     ls -d ${PROXY_BASE_DIR}/*/ 2>/dev/null | xargs -n 1 basename 2>/dev/null || echo ""
 }
 
+# --- Menu Functions ---
+
 show_main_menu() {
     clear
     echo -e "${CY}╔══════════════════════════════════════╗${NC}"
-    echo -e "${CY}║     MTProto Proxy Manager v2.2       ║${NC}"
+    echo -e "${CY}║     MTProto Proxy Manager v3.0       ║${NC}"
     echo -e "${CY}╚══════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${BL}1)${NC} Manage Existing Proxies"
@@ -103,8 +109,6 @@ list_and_select_proxy() {
         clear
         echo -e "${CY}═════════ Proxy Management ═════════${NC}"
         echo ""
-
-        # Get the list of proxies into an array
         local proxies=($(get_proxy_list))
 
         if [ ${#proxies[@]} -eq 0 ]; then
@@ -118,12 +122,10 @@ list_and_select_proxy() {
                 if [ -f "${PROXY_BASE_DIR}/${proxy}/info.txt" ]; then
                     port_info=$(grep "^PORT=" "${PROXY_BASE_DIR}/${proxy}/info.txt" | cut -d'=' -f2)
                 fi
-
                 local status="${RED}[Stopped]${NC}"
                 if systemctl is-active --quiet "mtproto-proxy-${proxy}"; then
                     status="${GR}[Running]${NC}"
                 fi
-
                 echo -e "${BL}${counter})${NC} ${proxy} (Port: ${port_info}) ${status}"
                 counter=$((counter + 1))
             done
@@ -133,26 +135,21 @@ list_and_select_proxy() {
 
         echo ""
         read -p "Select a proxy to manage, or 0 to exit: " choice < /dev/tty
+        if [[ "$choice" == "0" ]]; then break; fi
 
-        if [[ "$choice" == "0" ]]; then
-            break # Exit the while loop and return to the main menu
-        fi
-
-        # Validate the selection
         if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#proxies[@]}" ]; then
             SELECTED_PROXY="${proxies[$((choice-1))]}"
-            # In the next step, we will call the management menu for the selected proxy
             show_proxy_submenu
         else
-            echo -e "${RED}Invalid selection!${NC}"
-            sleep 1
+            echo -e "${RED}Invalid selection!${NC}"; sleep 1
         fi
     done
 }
 
 show_proxy_submenu() {
-    PROXY_DELETED="false" # Reset the flag
+    PROXY_DELETED="false"
     while true; do
+        if [[ "$PROXY_DELETED" == "true" ]]; then break; fi
         clear
         echo -e "${CY}Managing Proxy: ${GR}${SELECTED_PROXY}${NC}"
         echo "----------------------------------------"
@@ -163,53 +160,62 @@ show_proxy_submenu() {
         echo "----------------------------------------"
         echo -e "${BL}0)${NC} Back to Proxy List"
         echo ""
-
         read -p "Choose an action: " choice < /dev/tty
-
         case $choice in
             1) view_proxy_details ;;
             2) manage_proxy_service ;;
             3) show_proxy_links ;;
-            4) delete_proxy; [[ "$PROXY_DELETED" == "true" ]] && break ;; # Break if proxy was deleted
+            4) delete_proxy; [[ "$PROXY_DELETED" == "true" ]] && break ;;
             0) break ;;
             *) echo -e "${RED}Invalid selection!${NC}"; sleep 1 ;;
         esac
     done
 }
 
-select_proxy() {
+# --- Proxy Action Functions ---
+
+create_new_proxy() {
     clear
-    local proxies=$(get_proxy_list)
-    if [ -z "$proxies" ]; then
-        error "No proxies available!"
-        sleep 2
-        return 1
+    echo -e "${CY}--- Create New Proxy ---${NC}"
+    read -p "Enter a unique name for this proxy (e.g., MyProxy1): " PROXY_NAME < /dev/tty
+
+    if [ -z "$PROXY_NAME" ]; then
+        error "Proxy name cannot be empty."; press_enter_to_continue; return
     fi
 
-    echo -e "${CY}Please select a proxy:${NC}"
-    local counter=1
-    local proxy_array=()
+    if [ -d "${PROXY_BASE_DIR}/${PROXY_NAME}" ]; then
+        error "A proxy with this name already exists!"; press_enter_to_continue; return
+    fi
+    
+    local proxy_dir="${PROXY_BASE_DIR}/${PROXY_NAME}"
+    sudo mkdir -p "${proxy_dir}"
 
-    for proxy in $proxies; do
-        proxy_array+=("$proxy")
-        echo -e "${BL}${counter})${NC} ${proxy}"
-        counter=$((counter + 1))
-    done
-    echo ""
-    read -p "Enter number (or press Enter to cancel): " selection < /dev/tty
-
-    if [[ -z "$selection" ]]; then
-        return 1
+    if ! do_build_config "${proxy_dir}"; then
+        error "Configuration failed. Aborting proxy creation."; sudo rm -rf "$proxy_dir"; press_enter_to_continue; return
     fi
 
-    if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#proxy_array[@]}" ]; then
-        SELECTED_PROXY="${proxy_array[$((selection-1))]}"
-        return 0
+    # Generate vm.args file with a UNIQUE name and cookie for each proxy
+    echo "-name ${PROXY_NAME}@127.0.0.1
+-setcookie ${PROXY_NAME}_cookie
++K true
++P 134217727
+-env ERL_MAX_ETS_TABLES 4096" | sudo tee "${proxy_dir}/prod-vm.args" > /dev/null
+
+    if ! create_systemd_service "$PROXY_NAME"; then
+        error "Failed to create systemd service."; sudo rm -rf "$proxy_dir"; press_enter_to_continue; return
+    fi
+    
+    info "Starting the new proxy..."
+    sudo systemctl start "mtproto-proxy-${PROXY_NAME}"
+    sleep 2
+
+    if systemctl is-active --quiet "mtproto-proxy-${PROXY_NAME}"; then
+        info "Proxy '${PROXY_NAME}' created and started successfully!"
     else
-        error "Invalid selection!"
-        sleep 1
-        return 1
+        error "Failed to start the proxy service. Check logs with: sudo journalctl -u mtproto-proxy-${PROXY_NAME}"
     fi
+
+    press_enter_to_continue
 }
 
 create_systemd_service() {
@@ -220,18 +226,14 @@ create_systemd_service() {
     local proxy_dir="${PROXY_BASE_DIR}/${proxy_name}"
     local REL_DIR="${SRC_PATH}/_build/prod/rel/mtp_proxy"
 
-    # Automatically find the Erlang Runtime System (erts) version directory
     local ERTS_DIR=$(find "${REL_DIR}/erts-"* -maxdepth 0 -type d | head -n 1)
     if [ -z "$ERTS_DIR" ]; then
-        error "Could not find Erlang runtime directory (erts-*) in ${REL_DIR}"
-        return 1
+        error "Could not find Erlang runtime directory (erts-*) in ${REL_DIR}"; return 1
     fi
 
-    # Automatically find the release version from the release data file
     local RELEASE_VSN=$(cat "${REL_DIR}/releases/start_erl.data" | cut -d' ' -f2)
     if [ -z "$RELEASE_VSN" ]; then
-        error "Could not find release version from start_erl.data file"
-        return 1
+        error "Could not find release version from start_erl.data file"; return 1
     fi
 
     sudo bash -c "cat > ${service_path}" << EOL
@@ -242,9 +244,9 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${proxy_dir}
-# --- THE FINAL MISSING PIECE ---
 # Set the BINDIR environment variable required by erlexec
 Environment="BINDIR=${ERTS_DIR}/bin"
+# Bypass the wrapper script and call erlexec directly
 ExecStart=${ERTS_DIR}/bin/erlexec -noinput +Bd \\
     -boot ${REL_DIR}/releases/${RELEASE_VSN}/start \\
     -mode embedded \\
@@ -264,57 +266,6 @@ EOL
     info "Service for ${proxy_name} created and enabled."
 }
 
-create_new_proxy() {
-    clear
-    echo -e "${CY}--- Create New Proxy ---${NC}"
-    read -p "Enter a unique name for this proxy (e.g., MyProxy1): " PROXY_NAME < /dev/tty
-
-    if [ -z "$PROXY_NAME" ]; then
-        error "Proxy name cannot be empty."
-        press_enter_to_continue
-        return
-    fi
-
-    if [ -d "${PROXY_BASE_DIR}/${PROXY_NAME}" ]; then
-        error "A proxy with this name already exists!"
-        press_enter_to_continue
-        return
-    fi
-    
-    local proxy_dir="${PROXY_BASE_DIR}/${PROXY_NAME}"
-    sudo mkdir -p "${proxy_dir}"
-
-    # Generate config and info file
-    if ! do_build_config "${proxy_dir}"; then
-        error "Configuration failed. Aborting proxy creation."
-        sudo rm -rf "$proxy_dir" # Clean up failed attempt
-        press_enter_to_continue
-        return
-    fi
-
-# Generate vm.args file with a UNIQUE name and cookie for each proxy
-echo "-name ${PROXY_NAME}@127.0.0.1
--setcookie ${PROXY_NAME}_cookie
-+K true
-+P 134217727
--env ERL_MAX_ETS_TABLES 4096" | sudo tee "${proxy_dir}/prod-vm.args" > /dev/null
-
-    create_systemd_service "$PROXY_NAME"
-    
-    info "Starting the new proxy..."
-    sudo systemctl start "mtproto-proxy-${PROXY_NAME}"
-    sleep 2
-
-    if systemctl is-active --quiet "mtproto-proxy-${PROXY_NAME}"; then
-        info "Proxy '${PROXY_NAME}' created and started successfully!"
-    else
-        error "Failed to start the proxy service. Check logs with: sudo journalctl -u mtproto-proxy-${PROXY_NAME}"
-    fi
-
-    press_enter_to_continue
-}
-
-# NEW version of view_proxy_details
 view_proxy_details() {
     clear
     echo -e "${CY}--- Details for ${SELECTED_PROXY} ---${NC}"
@@ -327,7 +278,6 @@ view_proxy_details() {
     press_enter_to_continue
 }
 
-# NEW version of manage_proxy_service
 manage_proxy_service() {
     clear
     echo -e "${CY}--- Manage Service for ${SELECTED_PROXY} ---${NC}"
@@ -351,19 +301,41 @@ manage_proxy_service() {
     press_enter_to_continue
 }
 
-# NEW version of show_proxy_links
 show_proxy_links() {
     local info_file="${PROXY_BASE_DIR}/${SELECTED_PROXY}/info.txt"
-    if [ -f "$info_file" ]; then
-        source "$info_file"
-        do_print_links
-    else
-        error "Could not find info file for ${SELECTED_PROXY}!"
+    if [ ! -f "$info_file" ]; then
+        error "Could not find info file for ${SELECTED_PROXY}!"; press_enter_to_continue; return
     fi
+    source "$info_file"
+    
+    info "Detecting IP address..."
+    local IP=$(curl -s -4 -m 10 https://checkip.amazonaws.com || curl -s -4 -m 10 https://api.ipify.org)
+    if [ -z "$IP" ]; then
+        error "Could not detect external IP address."; press_enter_to_continue; return
+    fi
+    info "Detected external IP is ${IP}"
+
+    local URL_PREFIX="https://t.me/proxy?server=${IP}&port=${PORT}&secret="
+
+    echo -e "\n--- ${CY}${SELECTED_PROXY}${NC} Connection Links ---"
+    
+    local show_normal_links=true
+    
+    if [[ "$TLS_ONLY" == "y" ]]; then
+        local HEX_TLS_SECRET="ee$(echo -n ${SECRET} | LC_ALL=C xxd -p -c 256)$(echo -n ${TLS_DOMAIN} | LC_ALL=C xxd -p -c 256)"
+        echo -e "${GR}Fake-TLS:${NC}       ${URL_PREFIX}${HEX_TLS_SECRET}"
+        [[ "$DD_ONLY" != "y" ]] && show_normal_links=false
+    fi
+
+    if [[ "$show_normal_links" == "true" ]]; then
+        echo -e "${GR}Secure (DD):${NC}    ${URL_PREFIX}dd${SECRET}"
+        echo -e "${GR}Normal:${NC}         ${URL_PREFIX}${SECRET}"
+    fi
+    
+    echo "-------------------------------------"
     press_enter_to_continue
 }
 
-# NEW version of delete_proxy
 delete_proxy() {
     read -p "Are you sure you want to PERMANENTLY delete '${SELECTED_PROXY}'? [y/N] " confirm < /dev/tty
     if [[ "$confirm" =~ ^[yY]$ ]]; then
@@ -377,37 +349,32 @@ delete_proxy() {
         info "Removing proxy directory..."
         sudo rm -rf "${PROXY_BASE_DIR}/${SELECTED_PROXY}"
         info "Proxy '${SELECTED_PROXY}' has been deleted."
-        press_enter_to_continue
-        # We need to exit the submenu loop after deletion
-        # This is a bit of a trick: we'll use a global flag
         PROXY_DELETED="true"
+        press_enter_to_continue
     else
         info "Deletion cancelled."
         press_enter_to_continue
     fi
 }
 
-
-# --- Original Script Functions (modified for modularity) ---
+# --- Build and Config Functions ---
 
 do_configure_os() {
     if [ -f "/etc/os-release" ]; then
         source /etc/os-release
     else
-        error "Cannot detect OS. /etc/os-release not found."
-        return 1
+        error "Cannot detect OS. /etc/os-release not found."; return 1
     fi
     
     info "Detected OS is ${ID} ${VERSION_ID}. Installing dependencies..."
     case "${ID}" in
         ubuntu|debian)
-            sudo apt-get update && sudo apt-get install -y erlang-nox erlang-dev make sed diffutils tar curl;;
+            sudo apt-get update && sudo apt-get install -y erlang-nox erlang-dev make sed diffutils tar curl findutils;;
         centos)
             sudo yum install -y epel-release wget
-            sudo yum install -y erlang erlang-devel make sed diffutils tar curl;;
+            sudo yum install -y erlang erlang-devel make sed diffutils tar curl findutils;;
         *)
-            error "Your OS ${ID} is not supported by this script."
-            return 1
+            error "Your OS ${ID} is not supported by this script."; return 1
     esac
     sudo timedatectl set-ntp on
 }
@@ -425,17 +392,11 @@ do_build() {
     make || return 1
 }
 
-# This is a helper function that might be missing in your script. Add it somewhere outside other functions.
-to_hex() {
-    od -A n -t x1 -w128 | sed 's/ //g'
-}
-
 do_build_config() {
     local proxy_dir=$1
     local config_path="${proxy_dir}/prod-sys.config"
     info "Interactively generating config-file for ${CY}${PROXY_NAME}${NC}"
     
-    # Declare local variables
     local PORT SECRET TAG DD_ONLY="n" TLS_ONLY="n" TLS_DOMAIN="" yn domain_input
     
     read -p "Enter port number (e.g., 443): " PORT < /dev/tty
@@ -446,31 +407,24 @@ do_build_config() {
     fi
     read -p "Enter your ad tag (or press Enter for none): " TAG < /dev/tty
     
-    # --- FIX 1: Ask for DD-ONLY mode ---
     read -p "Enable dd-only mode? (recommended) [Y/n] " yn < /dev/tty
     if [[ ! "$yn" =~ ^[nN]$ ]]; then
-        DD_ONLY="y"
-        info "Using dd-only mode"
-    else
-        warn "dd-only mode disabled"
+        DD_ONLY="y"; info "Using dd-only mode"
     fi
 
-    # --- Ask for FAKE-TLS mode ---
     read -p "Enable Fake-TLS mode? (recommended) [Y/n] " yn < /dev/tty
     if [[ ! "$yn" =~ ^[nN]$ ]]; then
       TLS_ONLY="y"
-      TLS_DOMAIN="www.google.com" # Default domain
+      TLS_DOMAIN="www.google.com"
       read -p "Enter a Fake-TLS domain [${TLS_DOMAIN}]: " domain_input < /dev/tty
       [[ -n "$domain_input" ]] && TLS_DOMAIN=$domain_input
       info "Using '${TLS_DOMAIN}' for fake-TLS"
     fi
 
-    # --- Basic Validation (Domain validation is removed) ---
     if ! [[ ${PORT} -gt 0 && ${PORT} -lt 65535 ]]; then error "Invalid port"; return 1; fi
     if ! [[ "$SECRET" =~ ^[[:xdigit:]]{32}$ ]]; then error "Invalid secret"; return 1; fi
     if ! [[ -z "$TAG" || "$TAG" =~ ^[[:xdigit:]]{32}$ ]]; then error "Invalid tag"; return 1; fi
     
-    # --- FIX 2: Correctly set protocols based on user choice ---
     local PROTO_ARG=""
     if [ "${DD_ONLY}" == "y" ] && [ "${TLS_ONLY}" == "y" ]; then
         PROTO_ARG='{allowed_protocols, [mtp_fake_tls,mtp_secure]},'
@@ -487,7 +441,6 @@ DD_ONLY=${DD_ONLY}
 TLS_ONLY=${TLS_ONLY}
 TLS_DOMAIN=${TLS_DOMAIN}" | sudo tee "${proxy_dir}/info.txt" > /dev/null
 
-    # Workaround for empty secret/tag for erlang config
     local ERL_SECRET=${SECRET:-"00000000000000000000000000000000"}
     local ERL_TAG=${TAG:-""}
 
@@ -515,41 +468,8 @@ TLS_DOMAIN=${TLS_DOMAIN}" | sudo tee "${proxy_dir}/info.txt" > /dev/null
 ].
 EOL
     info "Config generated successfully."
+    return 0
 }
-
-do_print_links() {
-    info "Detecting IP address..."
-    local IP=$(curl -s -4 -m 10 https://checkip.amazonaws.com || curl -s -4 -m 10 https://api.ipify.org)
-    if [ -z "$IP" ]; then
-        error "Could not detect external IP address."
-        return
-    fi
-    info "Detected external IP is ${IP}"
-
-    local URL_PREFIX="https://t.me/proxy?server=${IP}&port=${PORT}&secret="
-
-    echo -e "\n--- ${CY}${SELECTED_PROXY}${NC} Connection Links ---"
-    
-    # --- Link Generation Logic ---
-    local show_normal_links=true
-    
-    # 1. Fake-TLS Link (if enabled)
-    if [[ "$TLS_ONLY" == "y" ]]; then
-        local HEX_TLS_SECRET="ee$(echo -n ${SECRET} | LC_ALL=C xxd -p -c 256)$(echo -n ${TLS_DOMAIN} | LC_ALL=C xxd -p -c 256)"
-        echo -e "${GR}Fake-TLS:${NC}      ${URL_PREFIX}${HEX_TLS_SECRET}"
-        # If TLS is the *only* thing enabled, don't show normal links
-        [[ "$DD_ONLY" != "y" ]] && show_normal_links=false
-    fi
-
-    # 2. Normal and DD links (if not in TLS-only mode)
-    if [[ "$show_normal_links" == "true" ]]; then
-        echo -e "${GR}Secure (DD):${NC}    ${URL_PREFIX}dd${SECRET}"
-        echo -e "${GR}Normal:${NC}         ${URL_PREFIX}${SECRET}"
-    fi
-    
-    echo "-------------------------------------"
-}
-
 
 # --- Main Execution Logic ---
 main() {
@@ -568,9 +488,7 @@ main() {
 
     while true; do
         show_main_menu
-        # Prompt changed to [1-3] to match the new menu
         read -p "Choose option [1-3]: " choice < /dev/tty
-        # Case statement simplified for the new menu
         case $choice in
             1) list_and_select_proxy ;;
             2) create_new_proxy ;;
@@ -580,5 +498,4 @@ main() {
     done
 }
 
-# This line calls the main function to start the script
 main
