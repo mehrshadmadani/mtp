@@ -495,3 +495,4 @@ else
             *) echo -e "${RED}Invalid option!${NC}"; sleep 1 ;;
         esac
     done
+fi
