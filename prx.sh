@@ -94,7 +94,7 @@ get_proxy_list() {
 show_main_menu() {
     clear
     echo -e "${CY}╔══════════════════════════════════════╗${NC}"
-    echo -e "${CY}║     MTProto Proxy Manager v3.0       ║${NC}"
+    echo -e "${CY}║     MTProto Proxy Manager v4.0       ║${NC}"
     echo -e "${CY}╚══════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${BL}1)${NC} Manage Existing Proxies"
