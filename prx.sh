@@ -495,6 +495,6 @@ else
             6) delete_proxy ;;
             7) echo "Goodbye!"; exit 0 ;;
             *) echo -e "${RED}Invalid option!${NC}"; sleep 1 ;;
-        esac
-    done
+    esac
+done
 fi
