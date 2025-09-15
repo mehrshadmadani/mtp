@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTProto Proxy Manager v8.0 (Official Telegram Version)
+# MTProto Proxy Manager v8.1 (Official Telegram Version + ARM Patch)
 # Manages multiple instances of the official mtproto-proxy from https://github.com/TelegramMessenger/MTProxy
 #
 
@@ -81,6 +81,12 @@ check_and_compile_source() {
         
         # 2. Compile the source
         cd "$SRC_PATH/"
+
+        # --- NEW FIX FOR ARM ARCHITECTURE ---
+        info "Applying patch for compatibility with ARM and other architectures..."
+        sed -i 's/-mpclmul -march=core2 -mfpmath=sse -mssse3//g' Makefile
+        # --- END OF FIX ---
+
         info "Compiling source code..."
         make
         if [ $? -ne 0 ]; then
@@ -125,7 +131,7 @@ get_proxy_list() {
 show_main_menu() {
     clear
     echo -e "${CY}╔══════════════════════════════════════╗${NC}"
-    echo -e "${CY}║   Official MTProto Proxy Manager v8.0  ║${NC}"
+    echo -e "${CY}║   Official MTProto Proxy Manager v8.1  ║${NC}"
     echo -e "${CY}╚══════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${BL}1)${NC} Manage Existing Proxies"
