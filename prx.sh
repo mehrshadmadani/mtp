@@ -190,11 +190,18 @@ create_new_proxy() {
     local proxy_dir="${PROXY_BASE_DIR}/${PROXY_NAME}"
     sudo mkdir -p "${proxy_dir}"
 
+    # --- NEW: Copy the entire compiled release for complete isolation ---
+    info "Copying compiled files for the new proxy..."
+    local REL_SOURCE_DIR="${SRC_PATH}/_build/prod/rel/mtp_proxy"
+    if [ ! -d "$REL_SOURCE_DIR" ]; then
+        error "Compiled release not found! Please re-compile."; sudo rm -rf "$proxy_dir"; press_enter_to_continue; return
+    fi
+    sudo cp -R "${REL_SOURCE_DIR}" "${proxy_dir}/release"
+
     if ! do_build_config "${proxy_dir}"; then
         error "Configuration failed. Aborting proxy creation."; sudo rm -rf "$proxy_dir"; press_enter_to_continue; return
     fi
 
-    # Generate vm.args file with a UNIQUE name and cookie for each proxy
     echo "-name ${PROXY_NAME}@127.0.0.1
 -setcookie ${PROXY_NAME}_cookie
 +K true
@@ -224,18 +231,17 @@ create_systemd_service() {
     info "Creating systemd service file at ${service_path}"
 
     local proxy_dir="${PROXY_BASE_DIR}/${proxy_name}"
-    local REL_DIR="${SRC_PATH}/_build/prod/rel/mtp_proxy"
+    # --- NEW: Point to the proxy's own copy of the release files ---
+    local REL_DIR="${proxy_dir}/release"
 
-    # Automatically find the Erlang Runtime System (erts) version directory
     local ERTS_DIR=$(find "${REL_DIR}/erts-"* -maxdepth 0 -type d | head -n 1)
     if [ -z "$ERTS_DIR" ]; then
-        error "Could not find Erlang runtime directory (erts-*) in ${REL_DIR}"; return 1
+        error "Could not find Erlang runtime in proxy's own directory: ${REL_DIR}"; return 1
     fi
 
-    # Automatically find the release version from the release data file
     local RELEASE_VSN=$(cat "${REL_DIR}/releases/start_erl.data" | cut -d' ' -f2)
     if [ -z "$RELEASE_VSN" ]; then
-        error "Could not find release version from start_erl.data file"; return 1
+        error "Could not find release version in proxy's own directory"; return 1
     fi
 
     sudo bash -c "cat > ${service_path}" << EOL
@@ -246,12 +252,8 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${proxy_dir}
-# Set the BINDIR environment variable required by erlexec
 Environment="BINDIR=${ERTS_DIR}/bin"
-# --- FINAL WORKAROUND ---
-# Add a random startup delay to prevent race conditions on boot
-ExecStartPre=/bin/sh -c 'sleep \$((RANDOM %% 10 + 5))'
-# Bypass the wrapper script and call erlexec directly
+ExecStartPre=/bin/sh -c 'sleep \$((RANDOM %% 10 + 2))'
 ExecStart=${ERTS_DIR}/bin/erlexec -noinput +Bd \\
     -boot ${REL_DIR}/releases/${RELEASE_VSN}/start \\
     -mode embedded \\
