@@ -17,7 +17,7 @@ SELF="$0"
 WORKDIR=$(pwd)
 SRC_DIR_NAME="mtproto_proxy_source" # A dedicated directory for the source code
 SRC_PATH="${WORKDIR}/${SRC_DIR_NAME}"
-PROXY_EXECUTABLE="${SRC_PATH}/objs/bin/mtproto-proxy"
+PROXY_EXECUTABLE="${SRC_PATH}/_build/prod/rel/mtp_proxy/bin/mtp_proxy"
 
 # Multi-proxy management variables
 PROXY_BASE_DIR="/opt/mtproto-proxies"
