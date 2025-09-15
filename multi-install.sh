@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTProto Proxy Multi-Instance Installer (v5 - Final Unique Node Name Fix)
+# MTProto Proxy Multi-Instance Installer (v6 - Final Direct Node Name Injection)
 #
 
 # --- Colors ---
@@ -79,11 +79,6 @@ cat > config/prod-sys.config << EOL
 ].
 EOL
 
-# --- THE FINAL FIX: Create vm.args BEFORE compiling ---
-info "Creating unique VM arguments for the node..."
-echo "-name ${PROXY_NAME}@127.0.0.1
--setcookie ${PROXY_NAME}_cookie" > config/prod-vm.args
-
 make
 
 info "Creating user and installing files manually..."
@@ -109,13 +104,17 @@ Type=simple
 User=${USER_NAME}
 Group=${USER_NAME}
 WorkingDirectory=${INSTALL_DIR}
+
+# --- THE FINAL, DIRECT FIX IS HERE ---
 ExecStart=${ERTS_DIR}/bin/erlexec -noinput +Bd \\
+    -name ${PROXY_NAME}@127.0.0.1 \\
+    -setcookie ${PROXY_NAME}_cookie \\
     -boot ${INSTALL_DIR}/releases/${RELEASE_VSN}/start \\
     -mode embedded \\
     -boot_var SYSTEM_LIB_DIR ${INSTALL_DIR}/lib \\
     -config ${INSTALL_DIR}/releases/${RELEASE_VSN}/sys.config \\
-    -args_file ${INSTALL_DIR}/releases/${RELEASE_VSN}/vm.args \\
     -- foreground
+
 Restart=always
 RestartSec=5
 
