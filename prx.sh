@@ -59,6 +59,10 @@ check_and_compile_source() {
         info "Applying compatibility patch to Makefile for this server's CPU architecture..."
         sed -i 's/-mpclmul -march=core2 -mfpmath=sse -mssse3//g' Makefile
 
+        # --- THE FIX: Remove CPU-specific optimizations for ARM/other architectures ---
+        info "Applying compatibility patch to Makefile for this server's CPU architecture..."
+        sed -i 's/-mpclmul -march=core2 -mfpmath=sse -mssse3//g' Makefile
+
         info "Compiling source..."
         make
         if [ $? -ne 0 ]; then error "Compilation failed."; exit 1; fi
