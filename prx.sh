@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTProto Proxy Multi-Instance Manager v5.0 (Final)
+# MTProto Proxy Multi-Instance Manager v6.0 (Final)
 # Manages multiple instances of mtproto-proxy from https://github.com/seriyps/mtproto_proxy
 #
 
@@ -105,7 +105,7 @@ get_proxy_list() {
 show_main_menu() {
     clear
     echo -e "${CY}╔══════════════════════════════════════╗${NC}"
-    echo -e "${CY}║     MTProto Proxy Manager v5.0       ║${NC}"
+    echo -e "${CY}║     MTProto Proxy Manager v6.0       ║${NC}"
     echo -e "${CY}╚══════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${BL}1)${NC} Manage Existing Proxies"
@@ -199,24 +199,43 @@ create_new_proxy() {
     fi
     
     local proxy_dir="${PROXY_BASE_DIR}/${PROXY_NAME}"
-    sudo mkdir -p "${proxy_dir}"
+    local proxy_user="mtp-${PROXY_NAME}" # --- NEW: Define a unique username
 
-    # --- MAJOR CHANGE: The section for copying the release is REMOVED ---
-    # We will now use the central compiled source for all proxies.
-
-    if ! do_build_config "${proxy_dir}"; then
-        error "Configuration failed. Aborting proxy creation."; sudo rm -rf "$proxy_dir"; press_enter_to_continue; return
+    # --- NEW: Create a dedicated system user for this proxy instance ---
+    info "Creating a dedicated user: ${proxy_user}"
+    sudo useradd --system --no-create-home --shell /bin/false "${proxy_user}"
+    if [ $? -ne 0 ]; then
+        error "Failed to create user '${proxy_user}'. Aborting."; press_enter_to_continue; return
     fi
 
-    # --- CHANGE: Create vm.args directly in the proxy directory ---
+    sudo mkdir -p "${proxy_dir}"
+
+    # --- NEW: We go back to copying the release, but with correct permissions later ---
+    info "Copying compiled files for the new proxy..."
+    local REL_SOURCE_DIR="${SRC_PATH}/_build/prod/rel/mtp_proxy"
+    if [ ! -d "$REL_SOURCE_DIR" ]; then
+        error "Compiled release not found! Please re-compile."; sudo userdel "${proxy_user}"; sudo rm -rf "${proxy_dir}"; press_enter_to_continue; return
+    fi
+    sudo cp -R "${REL_SOURCE_DIR}" "${proxy_dir}/release"
+
+    # --- Create config files first ---
+    if ! do_build_config "${proxy_dir}"; then
+        error "Configuration failed. Aborting."; sudo userdel "${proxy_user}"; sudo rm -rf "${proxy_dir}"; press_enter_to_continue; return
+    fi
+
     echo "-name ${PROXY_NAME}@127.0.0.1
 -setcookie ${PROXY_NAME}_cookie
 +K true
 +P 134217727
 -env ERL_MAX_ETS_TABLES 4096" | sudo tee "${proxy_dir}/vm.args" > /dev/null
 
+    # --- NEW & CRITICAL: Set correct ownership for all proxy files ---
+    info "Setting file ownership for user ${proxy_user}..."
+    sudo chown -R "${proxy_user}":"${proxy_user}" "${proxy_dir}"
+
+    # --- Create the service with the new user ---
     if ! create_systemd_service "$PROXY_NAME"; then
-        error "Failed to create systemd service."; sudo rm -rf "$proxy_dir"; press_enter_to_continue; return
+        error "Failed to create systemd service."; sudo userdel "${proxy_user}"; sudo rm -rf "${proxy_dir}"; press_enter_to_continue; return
     fi
     
     info "Starting the new proxy..."
@@ -238,18 +257,19 @@ create_systemd_service() {
     info "Creating systemd service file at ${service_path}"
 
     local proxy_dir="${PROXY_BASE_DIR}/${proxy_name}"
+    local proxy_user="mtp-${proxy_name}" # --- NEW: Define the user again
     
-    # --- MAJOR CHANGE: Point to the central compiled source, not a local copy ---
-    local REL_DIR="${SRC_PATH}/_build/prod/rel/mtp_proxy"
+    # --- Paths now point to the copied release inside the proxy's directory ---
+    local REL_DIR="${proxy_dir}/release"
 
     local ERTS_DIR=$(find "${REL_DIR}/erts-"* -maxdepth 0 -type d | head -n 1)
     if [ -z "$ERTS_DIR" ]; then
-        error "Could not find Erlang runtime in the central source directory: ${REL_DIR}"; return 1
+        error "Could not find Erlang runtime in proxy's own directory: ${REL_DIR}"; return 1
     fi
 
     local RELEASE_VSN=$(cat "${REL_DIR}/releases/start_erl.data" | cut -d' ' -f2)
     if [ -z "$RELEASE_VSN" ]; then
-        error "Could not find release version in the central source directory"; return 1
+        error "Could not find release version in proxy's own directory"; return 1
     fi
 
     sudo bash -c "cat > ${service_path}" << EOL
@@ -259,6 +279,10 @@ After=network.target
 
 [Service]
 Type=simple
+# --- NEW & CRITICAL: Run the service as the dedicated, non-root user ---
+User=${proxy_user}
+Group=${proxy_user}
+
 WorkingDirectory=${proxy_dir}
 Environment="BINDIR=${ERTS_DIR}/bin"
 ExecStartPre=/bin/sh -c 'sleep \$((RANDOM %% 10 + 2))'
@@ -355,6 +379,8 @@ delete_proxy() {
     read -p "Are you sure you want to PERMANENTLY delete '${SELECTED_PROXY}'? [y/N] " confirm < /dev/tty
     if [[ "$confirm" =~ ^[yY]$ ]]; then
         local service_name="mtproto-proxy-${SELECTED_PROXY}"
+        local proxy_user="mtp-${SELECTED_PROXY}" # --- NEW: Define user to be deleted
+
         info "Stopping and disabling service..."
         sudo systemctl stop "$service_name"
         sudo systemctl disable "$service_name"
@@ -363,6 +389,11 @@ delete_proxy() {
         sudo systemctl daemon-reload
         info "Removing proxy directory..."
         sudo rm -rf "${PROXY_BASE_DIR}/${SELECTED_PROXY}"
+        
+        # --- NEW: Delete the dedicated system user ---
+        info "Deleting user '${proxy_user}'..."
+        sudo userdel "${proxy_user}"
+
         info "Proxy '${SELECTED_PROXY}' has been deleted."
         PROXY_DELETED="true"
         press_enter_to_continue
@@ -410,7 +441,7 @@ do_build() {
 
 do_build_config() {
     local proxy_dir=$1
-    # --- MAJOR CHANGE: Config file is now created directly in the proxy's own directory ---
+    # --- CHANGE: Create config file directly in the proxy's directory ---
     local config_path="${proxy_dir}/sys.config"
     
     info "Interactively generating config-file for ${CY}${PROXY_NAME}${NC}"
