@@ -88,16 +88,13 @@ get_proxy_list() {
 show_main_menu() {
     clear
     echo -e "${CY}╔══════════════════════════════════════╗${NC}"
-    echo -e "${CY}║     MTProto Proxy Manager v2.1       ║${NC}"
+    echo -e "${CY}║     MTProto Proxy Manager v2.2       ║${NC}"
     echo -e "${CY}╚══════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "${BL}1)${NC} List All Proxies"
+    echo -e "${BL}1)${NC} Manage Existing Proxies"
     echo -e "${BL}2)${NC} Create New Proxy"
-    echo -e "${BL}3)${NC} View Proxy Details"
-    echo -e "${BL}4)${NC} Manage Proxy Service (Start/Stop/Logs)"
-    echo -e "${BL}5)${NC} Show Proxy Links"
-    echo -e "${BL}6)${NC} Delete Proxy"
-    echo -e "${BL}7)${NC} Exit"
+    echo ""
+    echo -e "${BL}3)${NC} Exit"
     echo ""
 }
 
