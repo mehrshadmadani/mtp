@@ -431,7 +431,7 @@ do_build_config() {
     if ! [[ ${PORT} -gt 0 && ${PORT} -lt 65535 ]]; then error "Invalid port"; return 1; fi
     if ! [[ "$SECRET" =~ ^[[:xdigit:]]{32}$ ]]; then error "Invalid secret"; return 1; fi
     if ! [[ -z "$TAG" || "$TAG" =~ ^[[:xdigit:]]{32}$ ]]; then error "Invalid tag"; return 1; fi
-    if [[ "$TLS_ONLY" == "y" && ! "$TLS_DOMAIN" =~ $domain_pattern ]]; then error "Invalid Fake-TLS domain: ${TLS_DOMAIN}"; return 1; fi
+    # if [[ "$TLS_ONLY" == "y" && ! "$TLS_DOMAIN" =~ $domain_pattern ]]; then error "Invalid Fake-TLS domain: ${TLS_DOMAIN}"; return 1; fi
 
     local PROTO_ARG='{allowed_protocols, [mtp_secure]},'
     if [ "$TLS_ONLY" == "y" ]; then
