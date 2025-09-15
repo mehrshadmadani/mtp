@@ -101,34 +101,60 @@ show_main_menu() {
     echo ""
 }
 
-list_all_proxies() {
-    clear
-    echo -e "${CY}═══════════════════════════════════════${NC}"
-    echo -e "${CY}         Active Proxies List           ${NC}"
-    echo -e "${CY}═══════════════════════════════════════${NC}"
-    echo ""
+list_and_select_proxy() {
+    while true; do
+        clear
+        echo -e "${CY}═════════ Proxy Management ═════════${NC}"
+        echo ""
 
-    local proxies=$(get_proxy_list)
-    if [ -z "$proxies" ]; then
-        echo -e "${YE}No proxies found! Use option 2 to create one.${NC}"
-    else
-        local counter=1
-        for proxy in $proxies; do
-            local port_info="N/A"
-            if [ -f "${PROXY_BASE_DIR}/${proxy}/info.txt" ]; then
-                port_info=$(grep "^PORT=" "${PROXY_BASE_DIR}/${proxy}/info.txt" | cut -d'=' -f2)
-            fi
+        # Get the list of proxies into an array
+        local proxies=($(get_proxy_list))
 
-            local status="${RED}[Stopped]${NC}"
-            if systemctl is-active --quiet "mtproto-proxy-${proxy}"; then
-                status="${GR}[Running]${NC}"
-            fi
+        if [ ${#proxies[@]} -eq 0 ]; then
+            echo -e "${YE}No proxies found!${NC}"
+            echo ""
+            echo -e "${BL}0)${NC} Back to Main Menu"
+        else
+            local counter=1
+            for proxy in "${proxies[@]}"; do
+                local port_info="N/A"
+                if [ -f "${PROXY_BASE_DIR}/${proxy}/info.txt" ]; then
+                    port_info=$(grep "^PORT=" "${PROXY_BASE_DIR}/${proxy}/info.txt" | cut -d'=' -f2)
+                fi
 
-            echo -e "${BL}${counter})${NC} ${proxy} - Port: ${port_info} ${status}"
-            counter=$((counter + 1))
-        done
-    fi
-    press_enter_to_continue
+                local status="${RED}[Stopped]${NC}"
+                if systemctl is-active --quiet "mtproto-proxy-${proxy}"; then
+                    status="${GR}[Running]${NC}"
+                fi
+
+                echo -e "${BL}${counter})${NC} ${proxy} (Port: ${port_info}) ${status}"
+                counter=$((counter + 1))
+            done
+            echo "----------------------------------------"
+            echo -e "${BL}0)${NC} Back to Main Menu"
+        fi
+
+        echo ""
+        read -p "Select a proxy to manage, or 0 to exit: " choice < /dev/tty
+
+        if [[ "$choice" == "0" ]]; then
+            break # Exit the while loop and return to the main menu
+        fi
+
+        # Validate the selection
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#proxies[@]}" ]; then
+            SELECTED_PROXY="${proxies[$((choice-1))]}"
+            # Here we will call the management menu for the selected proxy
+            # For now, let's just show a message
+            clear
+            echo -e "You selected: ${GR}${SELECTED_PROXY}${NC}"
+            echo "The management menu for this proxy will be implemented in the next step."
+            press_enter_to_continue
+        else
+            echo -e "${RED}Invalid selection!${NC}"
+            sleep 1
+        fi
+    done
 }
 
 select_proxy() {
@@ -469,7 +495,7 @@ main() {
         show_main_menu
         read -p "Choose option [1-7]: " choice < /dev/tty
         case $choice in
-            1) list_all_proxies ;;
+            1) list_and_select_proxy ;;
             2) create_new_proxy ;;
             3) view_proxy_details ;;
             4) manage_proxy_service ;;
