@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTProto Proxy Multi-Instance Manager v5.2 (Final - C Version, Universal Compile)
+# MTProto Proxy Multi-Instance Manager v5.3 (Final - C Version, Universal Compile Fix)
 # Manages multiple instances of the official C proxy from https://github.com/TelegramMessenger/MTProxy
 #
 
@@ -55,9 +55,11 @@ check_and_compile_source() {
 
         cd "$SRC_PATH/"
 
-        # --- THE FINAL FIX: Replace the entire CFLAGS line with a generic one ---
+        # --- THE FINAL FIX: Apply two patches to Makefile for full CPU compatibility ---
         info "Applying universal compatibility patch to Makefile for this server's CPU..."
         sed -i 's/^CFLAGS = .*/CFLAGS = -O3 -std=gnu11 -Wall/g' Makefile
+        sed -i 's/^PIC_CFLAGS = .*/PIC_CFLAGS = -fpic/g' Makefile
+
 
         info "Compiling source..."
         make
@@ -83,7 +85,7 @@ get_proxy_list() {
 show_main_menu() {
     clear
     echo -e "${CY}╔══════════════════════════════════════╗${NC}"
-    echo -e "${CY}║ MTProto Proxy Manager v5.2 (C Ver.)  ║${NC}"
+    echo -e "${CY}║ MTProto Proxy Manager v5.3 (C Ver.)  ║${NC}"
     echo -e "${CY}╚══════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${BL}1)${NC} Manage Existing Proxies"
