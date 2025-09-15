@@ -399,6 +399,11 @@ do_build() {
     make || return 1
 }
 
+# This is a helper function that might be missing in your script. Add it somewhere outside other functions.
+to_hex() {
+    od -A n -t x1 -w128 | sed 's/ //g'
+}
+
 do_build_config() {
     local proxy_dir=$1
     local config_path="${proxy_dir}/prod-sys.config"
@@ -484,11 +489,6 @@ TLS_DOMAIN=${TLS_DOMAIN}" | sudo tee "${proxy_dir}/info.txt" > /dev/null
 ].
 EOL
     info "Config generated successfully."
-}
-
-# This is a helper function that might be missing in your script. Add it somewhere outside other functions.
-to_hex() {
-    od -A n -t x1 -w128 | sed 's/ //g'
 }
 
 do_print_links() {
