@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTProto Proxy Multi-Instance Manager v3.0 (Final)
+# MTProto Proxy Multi-Instance Manager v4.0 (Final)
 # Manages multiple instances of mtproto-proxy from https://github.com/seriyps/mtproto_proxy
 #
 
@@ -190,33 +190,19 @@ create_new_proxy() {
     local proxy_dir="${PROXY_BASE_DIR}/${PROXY_NAME}"
     sudo mkdir -p "${proxy_dir}"
 
-    # --- NEW: Copy the entire compiled release for complete isolation ---
-    info "Copying compiled files for the new proxy..."
-    local REL_SOURCE_DIR="${SRC_PATH}/_build/prod/rel/mtp_proxy"
-    if [ ! -d "$REL_SOURCE_DIR" ]; then
-        error "Compiled release not found! Please re-compile."; sudo rm -rf "$proxy_dir"; press_enter_to_continue; return
-    fi
-    sudo cp -R "${REL_SOURCE_DIR}" "${proxy_dir}/release"
+    # --- MAJOR CHANGE: The section for copying the release is REMOVED ---
+    # We will now use the central compiled source for all proxies.
 
     if ! do_build_config "${proxy_dir}"; then
         error "Configuration failed. Aborting proxy creation."; sudo rm -rf "$proxy_dir"; press_enter_to_continue; return
     fi
 
-# ... (inside create_new_proxy)
-    # --- CHANGE: Find release version to create vm.args in the correct location ---
-    local REL_DIR="${proxy_dir}/release"
-    local RELEASE_VSN=$(cat "${REL_DIR}/releases/start_erl.data" | cut -d' ' -f2)
-    if [ -z "$RELEASE_VSN" ]; then
-        error "Could not find release version in proxy's own directory"; sudo rm -rf "$proxy_dir"; press_enter_to_continue; return
-    fi
-    local vm_args_path="${REL_DIR}/releases/${RELEASE_VSN}/vm.args"
-
+    # --- CHANGE: Create vm.args directly in the proxy directory ---
     echo "-name ${PROXY_NAME}@127.0.0.1
 -setcookie ${PROXY_NAME}_cookie
 +K true
 +P 134217727
--env ERL_MAX_ETS_TABLES 4096" | sudo tee "${vm_args_path}" > /dev/null
-# ...
+-env ERL_MAX_ETS_TABLES 4096" | sudo tee "${proxy_dir}/vm.args" > /dev/null
 
     if ! create_systemd_service "$PROXY_NAME"; then
         error "Failed to create systemd service."; sudo rm -rf "$proxy_dir"; press_enter_to_continue; return
@@ -241,17 +227,18 @@ create_systemd_service() {
     info "Creating systemd service file at ${service_path}"
 
     local proxy_dir="${PROXY_BASE_DIR}/${proxy_name}"
-    # --- NEW: Point to the proxy's own copy of the release files ---
-    local REL_DIR="${proxy_dir}/release"
+    
+    # --- MAJOR CHANGE: Point to the central compiled source, not a local copy ---
+    local REL_DIR="${SRC_PATH}/_build/prod/rel/mtp_proxy"
 
     local ERTS_DIR=$(find "${REL_DIR}/erts-"* -maxdepth 0 -type d | head -n 1)
     if [ -z "$ERTS_DIR" ]; then
-        error "Could not find Erlang runtime in proxy's own directory: ${REL_DIR}"; return 1
+        error "Could not find Erlang runtime in the central source directory: ${REL_DIR}"; return 1
     fi
 
     local RELEASE_VSN=$(cat "${REL_DIR}/releases/start_erl.data" | cut -d' ' -f2)
     if [ -z "$RELEASE_VSN" ]; then
-        error "Could not find release version in proxy's own directory"; return 1
+        error "Could not find release version in the central source directory"; return 1
     fi
 
     sudo bash -c "cat > ${service_path}" << EOL
@@ -268,8 +255,8 @@ ExecStart=${ERTS_DIR}/bin/erlexec -noinput +Bd \\
     -boot ${REL_DIR}/releases/${RELEASE_VSN}/start \\
     -mode embedded \\
     -boot_var SYSTEM_LIB_DIR ${REL_DIR}/lib \\
-    -config ${REL_DIR}/releases/${RELEASE_VSN}/sys.config \\
-    -args_file ${REL_DIR}/releases/${RELEASE_VSN}/vm.args \\
+    -config ${proxy_dir}/sys.config \\
+    -args_file ${proxy_dir}/vm.args \\
     -- foreground
 Restart=always
 RestartSec=5
@@ -412,16 +399,10 @@ do_build() {
 
 do_build_config() {
     local proxy_dir=$1
-    # --- NEW: Find the correct config path inside the release directory ---
-    local REL_DIR="${proxy_dir}/release"
-    local RELEASE_VSN=$(cat "${REL_DIR}/releases/start_erl.data" | cut -d' ' -f2)
-    if [ -z "$RELEASE_VSN" ]; then
-        error "Could not find release version in proxy's own directory"; return 1
-    fi
-    local config_path="${REL_DIR}/releases/${RELEASE_VSN}/sys.config"
-    # The config file MUST be named sys.config for the Erlang release to pick it up automatically.
+    # --- MAJOR CHANGE: Config file is now created directly in the proxy's own directory ---
+    local config_path="${proxy_dir}/sys.config"
     
-    info "Interactively generating config-file for ${CY}${PROXY_NAME}${NC} at ${config_path}"
+    info "Interactively generating config-file for ${CY}${PROXY_NAME}${NC}"
     
     local PORT SECRET TAG DD_ONLY="n" TLS_ONLY="n" TLS_DOMAIN="" yn domain_input
     
@@ -470,7 +451,6 @@ TLS_DOMAIN=${TLS_DOMAIN}" | sudo tee "${proxy_dir}/info.txt" > /dev/null
     local ERL_SECRET=${SECRET:-"00000000000000000000000000000000"}
     local ERL_TAG=${TAG:-""}
 
-    # --- CHANGE: Use the correct config_path variable ---
     sudo bash -c "cat > ${config_path}" << EOL
 %% -*- mode: erlang -*-
 [
