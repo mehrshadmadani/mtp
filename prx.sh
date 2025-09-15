@@ -221,7 +221,6 @@ create_systemd_service() {
     local REL_DIR="${SRC_PATH}/_build/prod/rel/mtp_proxy"
 
     # Automatically find the Erlang Runtime System (erts) version directory
-    # This makes the script robust against future updates
     local ERTS_DIR=$(find "${REL_DIR}/erts-"* -maxdepth 0 -type d | head -n 1)
     if [ -z "$ERTS_DIR" ]; then
         error "Could not find Erlang runtime directory (erts-*) in ${REL_DIR}"
@@ -243,9 +242,9 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${proxy_dir}
-# --- FINAL, DIRECT EXECUTION FIX ---
-# Bypass the wrapper script and call erlexec directly with our unique config files.
-# The backslashes (\) are for splitting the long command into multiple lines.
+# --- THE FINAL MISSING PIECE ---
+# Set the BINDIR environment variable required by erlexec
+Environment="BINDIR=${ERTS_DIR}/bin"
 ExecStart=${ERTS_DIR}/bin/erlexec -noinput +Bd \\
     -boot ${REL_DIR}/releases/${RELEASE_VSN}/start \\
     -mode embedded \\
