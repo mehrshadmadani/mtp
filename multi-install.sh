@@ -1,7 +1,6 @@
 #!/bin/bash
 #
-# MTProto Proxy Multi-Instance Installer (v3 - Final Correct Version)
-# This version mimics the original script's manual installation logic.
+# MTProto Proxy Multi-Instance Installer (v4 - Final Correct ExecStart)
 #
 
 # --- Colors ---
@@ -26,7 +25,7 @@ if [ -z "$1" ]; then
     exit 1
 fi
 
-set -e # Exit immediately if a command exits with a non-zero status.
+set -e
 
 PROXY_NAME="$1"
 SERVICE_NAME="mtproto-proxy-${PROXY_NAME}"
@@ -37,7 +36,6 @@ SRC_DIR="mtproto_proxy_source_temp"
 
 info "Starting installation for proxy: ${PROXY_NAME}"
 
-# --- 1. Cleanup, Dependencies, Get Source ---
 rm -rf "${SRC_DIR}" mtproto_proxy.tar.gz
 info "Installing dependencies..."
 apt-get update > /dev/null
@@ -49,7 +47,6 @@ tar -xaf mtproto_proxy.tar.gz
 mv mtproto_proxy-master "${SRC_DIR}"
 cd "${SRC_DIR}"
 
-# --- 2. Get User Configuration ---
 read -p "Enter port number for '${PROXY_NAME}': " PORT
 read -p "Enter 32-char hex secret (or press Enter for random): " SECRET
 if [ -z "$SECRET" ]; then SECRET=$(head -c 16 /dev/urandom | od -A n -t x1 | tr -d ' \n'); fi
@@ -61,7 +58,6 @@ if [[ ! "$yn_tls" =~ ^[nN]$ ]]; then
     [[ -n "$domain_input" ]] && TLS_DOMAIN=$domain_input
 fi
 
-# --- 3. Compile ---
 info "Generating configuration and compiling source..."
 PROTO_ARG='{allowed_protocols, [mtp_fake_tls,mtp_secure]},'
 ERL_TAG=${TAG:-""}
@@ -84,7 +80,6 @@ cat > config/prod-sys.config << EOL
 EOL
 make
 
-# --- 4. Manual Installation (The Correct Way) ---
 info "Creating user and installing files manually..."
 systemctl stop "${SERVICE_NAME}" > /dev/null 2>&1 || true
 useradd --system --no-create-home --shell /bin/false "${USER_NAME}" || true
@@ -94,8 +89,17 @@ mkdir -p "${LOG_DIR}"
 chown -R "${USER_NAME}":"${USER_NAME}" "${LOG_DIR}"
 chown -R "${USER_NAME}":"${USER_NAME}" "${INSTALL_DIR}"
 
-# --- 5. Create and Install Service File ---
 info "Creating systemd service file..."
+# --- THE FINAL FIX IS HERE: Using the full, correct ExecStart command ---
+ERTS_DIR=$(find "${INSTALL_DIR}/erts-"* -maxdepth 0 -type d | head -n 1)
+RELEASE_VSN=$(cat "${INSTALL_DIR}/releases/start_erl.data" | cut -d' ' -f2)
+VM_ARGS_PATH="${INSTALL_DIR}/releases/${RELEASE_VSN}/vm.args"
+SYS_CONFIG_PATH="${INSTALL_DIR}/releases/${RELEASE_VSN}/sys.config"
+
+# Set custom vm.args
+echo "-name ${PROXY_NAME}@127.0.0.1
+-setcookie ${PROXY_NAME}_cookie" > "${VM_ARGS_PATH}"
+
 cat > "${SERVICE_NAME}.service" << EOL
 [Unit]
 Description=MTProto proxy server for ${PROXY_NAME}
@@ -106,7 +110,15 @@ Type=simple
 User=${USER_NAME}
 Group=${USER_NAME}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/bin/mtp_proxy foreground
+
+ExecStart=${ERTS_DIR}/bin/erlexec -noinput +Bd \\
+    -boot ${INSTALL_DIR}/releases/${RELEASE_VSN}/start \\
+    -mode embedded \\
+    -boot_var SYSTEM_LIB_DIR ${INSTALL_DIR}/lib \\
+    -config ${SYS_CONFIG_PATH} \\
+    -args_file ${VM_ARGS_PATH} \\
+    -- foreground
+
 Restart=always
 RestartSec=5
 
@@ -115,14 +127,12 @@ WantedBy=multi-user.target
 EOL
 install -D "${SERVICE_NAME}.service" "/etc/systemd/system/${SERVICE_NAME}.service"
 
-# --- 6. Start the service ---
 info "Enabling and starting service: ${SERVICE_NAME}"
 systemctl daemon-reload
 systemctl enable "${SERVICE_NAME}"
 systemctl start "${SERVICE_NAME}"
 sleep 3
 
-# --- 7. Final Check and Cleanup ---
 cd ..
 rm -rf "${SRC_DIR}" mtproto_proxy.tar.gz
 
