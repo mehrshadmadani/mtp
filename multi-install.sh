@@ -1,7 +1,6 @@
 #!/bin/bash
 #
-# MTProto Proxy Multi-Instance Installer
-# Based on the original script, modified to support multiple instances.
+# MTProto Proxy Multi-Instance Installer (v2 - Bug Fixed)
 #
 
 # --- Colors ---
@@ -101,6 +100,9 @@ sed -i "s|Description=MTProto proxy server|Description=MTProto proxy server for 
 sed -i "s|User=mtproto-proxy|User=${USER_NAME}|g" config/mtproto-proxy.service
 sed -i "s|/var/log/mtproto-proxy|/var/log/${SERVICE_NAME}|g" config/mtproto-proxy.service
 
+# --- THE BUG FIX: Rename the service file before installing ---
+mv config/mtproto-proxy.service "config/${SERVICE_NAME}.service"
+
 # --- 7. Compile and Install ---
 info "Compiling source code..."
 make
@@ -119,7 +121,7 @@ cd ..
 rm -rf "${SRC_DIR}" mtproto_proxy.tar.gz
 
 if systemctl is-active --quiet "${SERVICE_NAME}"; then
-    info "Proxy '${PROXY_NAME}' is successfully installed and running!"
+    info "Proxy '${PROXY_NAME}' is successfully installed and running! ✅"
     IP=$(curl -s -4 https://checkip.amazonaws.com)
     echo "--- Your Proxy Link ---"
     echo "https://t.me/proxy?server=${IP}&port=${PORT}&secret=ee${SECRET}$(echo -n ${TLS_DOMAIN} | xxd -p -c 256)"
