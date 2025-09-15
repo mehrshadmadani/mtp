@@ -217,6 +217,10 @@ create_systemd_service() {
     local service_path="/etc/systemd/system/mtproto-proxy-${proxy_name}.service"
     info "Creating systemd service file at ${service_path}"
 
+    # --- FIX IS HERE ---
+    # The WorkingDirectory is now the proxy's own unique directory
+    local proxy_dir="${PROXY_BASE_DIR}/${proxy_name}"
+
     sudo bash -c "cat > ${service_path}" << EOL
 [Unit]
 Description=MTProto proxy server for ${proxy_name}
@@ -224,8 +228,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=${SRC_PATH}
-ExecStart=${PROXY_EXECUTABLE} foreground --config=${PROXY_BASE_DIR}/${proxy_name}/prod-sys.config --args=${PROXY_BASE_DIR}/${proxy_name}/prod-vm.args
+WorkingDirectory=${proxy_dir}
+ExecStart=${PROXY_EXECUTABLE} foreground --config=${proxy_dir}/prod-sys.config --args=${proxy_dir}/prod-vm.args
 Restart=always
 RestartSec=5
 
@@ -502,14 +506,25 @@ do_print_links() {
 
     local URL_PREFIX="https://t.me/proxy?server=${IP}&port=${PORT}&secret="
 
-    echo "--- ${CY}${SELECTED_PROXY}${NC} Connection Links ---"
-    # Always show the DD link
-    echo -e "${GR}Secure (DD):${NC} ${URL_PREFIX}dd${SECRET}"
-
+    echo -e "\n--- ${CY}${SELECTED_PROXY}${NC} Connection Links ---"
+    
+    # --- Link Generation Logic ---
+    local show_normal_links=true
+    
+    # 1. Fake-TLS Link (if enabled)
     if [[ "$TLS_ONLY" == "y" ]]; then
         local HEX_TLS_SECRET="ee$(echo -n ${SECRET} | LC_ALL=C xxd -p -c 256)$(echo -n ${TLS_DOMAIN} | LC_ALL=C xxd -p -c 256)"
-        echo -e "${GR}Fake-TLS:${NC}    ${URL_PREFIX}${HEX_TLS_SECRET}"
+        echo -e "${GR}Fake-TLS:${NC}      ${URL_PREFIX}${HEX_TLS_SECRET}"
+        # If TLS is the *only* thing enabled, don't show normal links
+        [[ "$DD_ONLY" != "y" ]] && show_normal_links=false
     fi
+
+    # 2. Normal and DD links (if not in TLS-only mode)
+    if [[ "$show_normal_links" == "true" ]]; then
+        echo -e "${GR}Secure (DD):${NC}    ${URL_PREFIX}dd${SECRET}"
+        echo -e "${GR}Normal:${NC}         ${URL_PREFIX}${SECRET}"
+    fi
+    
     echo "-------------------------------------"
 }
 
