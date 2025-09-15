@@ -390,7 +390,7 @@ do_build_config() {
     info "Interactively generating config-file for ${CY}${PROXY_NAME}${NC}"
     
     # Declare local variables
-    local PORT SECRET TAG DD_ONLY TLS_ONLY TLS_DOMAIN yn domain_input
+    local PORT SECRET TAG TLS_ONLY="n" TLS_DOMAIN="" yn domain_input
     
     read -p "Enter port number (e.g., 443): " PORT < /dev/tty
     read -p "Enter 32-char hex secret (or press Enter to generate random): " SECRET < /dev/tty
@@ -401,21 +401,21 @@ do_build_config() {
     read -p "Enter your ad tag (or press Enter for none): " TAG < /dev/tty
     
     read -p "Enable Fake-TLS mode? (recommended) [Y/n] " yn < /dev/tty
-    if [[ "$yn" =~ ^[nN]$ ]]; then
-      TLS_ONLY="n"
-    else
+    if [[ ! "$yn" =~ ^[nN]$ ]]; then
       TLS_ONLY="y"
       TLS_DOMAIN="www.google.com"
-      read -p "Enter Fake-TLS domain [${TLS_DOMAIN}]: " domain_input < /dev/tty
+      read -p "Enter a VALID Fake-TLS domain [${TLS_DOMAIN}]: " domain_input < /dev/tty
       [[ -n "$domain_input" ]] && TLS_DOMAIN=$domain_input
     fi
 
-    # Validation
+    # --- VALIDATION (BUG FIX IS HERE) ---
     if ! [[ ${PORT} -gt 0 && ${PORT} -lt 65535 ]]; then error "Invalid port"; return 1; fi
-    if ! [[ -n "`echo $SECRET | grep -x '[[:xdigit:]]\{32\}'`" ]]; then error "Invalid secret"; return 1; fi
-    if ! [[ -z "$TAG" || -n "`echo $TAG | grep -x '[[:xdigit:]]\{32\}'`" ]]; then error "Invalid tag"; return 1; fi
+    if ! [[ -n "$(echo "$SECRET" | grep -x '[[:xdigit:]]\{32\}')" ]]; then error "Invalid secret"; return 1; fi
+    if ! [[ -z "$TAG" || -n "$(echo "$TAG" | grep -x '[[:xdigit:]]\{32\}')" ]]; then error "Invalid tag"; return 1; fi
+    # ADDED THIS LINE TO VALIDATE THE DOMAIN
+    if [[ "$TLS_ONLY" == "y" && -z "$(echo "$TLS_DOMAIN" | grep -oE '^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,6}$')")" ]]; then error "Invalid Fake-TLS domain: ${TLS_DOMAIN}"; return 1; fi
 
-    local PROTO_ARG='{allowed_protocols, [mtp_secure]},' # DD-only is default and recommended
+    local PROTO_ARG='{allowed_protocols, [mtp_secure]},'
     if [ "$TLS_ONLY" == "y" ]; then
         PROTO_ARG='{allowed_protocols, [mtp_fake_tls,mtp_secure]},'
     fi
