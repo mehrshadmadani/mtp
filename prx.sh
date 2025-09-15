@@ -102,7 +102,7 @@ check_and_compile_source() {
         info "Source code compiled successfully."
     fi
     
-    # --- NEW: Download shared secrets/configs if they don't exist ---
+    # --- Download shared secrets/configs if they don't exist ---
     if [ ! -f "$TELEGRAM_SECRET" ]; then
         info "Downloading Telegram proxy secret for the first time..."
         if ! sudo curl -s https://core.telegram.org/getProxySecret -o "$TELEGRAM_SECRET"; then
