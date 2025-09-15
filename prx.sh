@@ -60,7 +60,6 @@ check_and_compile_source() {
         sed -i 's/^CFLAGS = .*/CFLAGS = -O3 -std=gnu11 -Wall/g' Makefile
         sed -i 's/^PIC_CFLAGS = .*/PIC_CFLAGS = -fpic/g' Makefile
 
-
         info "Compiling source..."
         make
         if [ $? -ne 0 ]; then error "Compilation failed."; exit 1; fi
