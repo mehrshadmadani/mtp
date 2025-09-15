@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTProto Proxy Multi-Instance Installer (v4 - Final Correct ExecStart)
+# MTProto Proxy Multi-Instance Installer (v5 - Final Unique Node Name Fix)
 #
 
 # --- Colors ---
@@ -78,6 +78,12 @@ cat > config/prod-sys.config << EOL
  {lager, [{log_root, "${LOG_DIR}"}]}
 ].
 EOL
+
+# --- THE FINAL FIX: Create vm.args BEFORE compiling ---
+info "Creating unique VM arguments for the node..."
+echo "-name ${PROXY_NAME}@127.0.0.1
+-setcookie ${PROXY_NAME}_cookie" > config/prod-vm.args
+
 make
 
 info "Creating user and installing files manually..."
@@ -90,15 +96,8 @@ chown -R "${USER_NAME}":"${USER_NAME}" "${LOG_DIR}"
 chown -R "${USER_NAME}":"${USER_NAME}" "${INSTALL_DIR}"
 
 info "Creating systemd service file..."
-# --- THE FINAL FIX IS HERE: Using the full, correct ExecStart command ---
 ERTS_DIR=$(find "${INSTALL_DIR}/erts-"* -maxdepth 0 -type d | head -n 1)
 RELEASE_VSN=$(cat "${INSTALL_DIR}/releases/start_erl.data" | cut -d' ' -f2)
-VM_ARGS_PATH="${INSTALL_DIR}/releases/${RELEASE_VSN}/vm.args"
-SYS_CONFIG_PATH="${INSTALL_DIR}/releases/${RELEASE_VSN}/sys.config"
-
-# Set custom vm.args
-echo "-name ${PROXY_NAME}@127.0.0.1
--setcookie ${PROXY_NAME}_cookie" > "${VM_ARGS_PATH}"
 
 cat > "${SERVICE_NAME}.service" << EOL
 [Unit]
@@ -110,15 +109,13 @@ Type=simple
 User=${USER_NAME}
 Group=${USER_NAME}
 WorkingDirectory=${INSTALL_DIR}
-
 ExecStart=${ERTS_DIR}/bin/erlexec -noinput +Bd \\
     -boot ${INSTALL_DIR}/releases/${RELEASE_VSN}/start \\
     -mode embedded \\
     -boot_var SYSTEM_LIB_DIR ${INSTALL_DIR}/lib \\
-    -config ${SYS_CONFIG_PATH} \\
-    -args_file ${VM_ARGS_PATH} \\
+    -config ${INSTALL_DIR}/releases/${RELEASE_VSN}/sys.config \\
+    -args_file ${INSTALL_DIR}/releases/${RELEASE_VSN}/vm.args \\
     -- foreground
-
 Restart=always
 RestartSec=5
 
