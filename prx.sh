@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTProto Proxy Multi-Instance Manager v5.0 (Final - Official C Version)
+# MTProto Proxy Multi-Instance Manager v5.1 (Final - C Version, All Architectures)
 # Manages multiple instances of the official C proxy from https://github.com/TelegramMessenger/MTProxy
 #
 
@@ -13,7 +13,7 @@ CY='\033[0;36m'
 NC='\033[0m'
 PROXY_DELETED="false"
 
-# --- Global Variables (MODIFIED FOR C VERSION) ---
+# --- Global Variables ---
 SELF="$0"
 WORKDIR=$(pwd)
 SRC_DIR_NAME="MTProxy_C_Source"
@@ -25,7 +25,7 @@ PROXY_BASE_DIR="/opt/mtproto-proxies"
 PROXY_NAME=""
 SELECTED_PROXY=""
 
-# --- Helper Functions (Unchanged) ---
+# --- Helper Functions ---
 info() { echo -e "${GR}INFO${NC}: $1"; }
 warn() { echo -e "${YE}WARNING${NC}: $1"; }
 error() { echo -e "${RED}ERROR${NC}: $1" 1>&2; }
@@ -40,7 +40,6 @@ init_proxy_system() {
     fi
 }
 
-# --- MODIFIED FOR C VERSION ---
 check_and_compile_source() {
     if [ ! -f "$PROXY_EXECUTABLE" ]; then
         info "Official MTProxy (C version) source not found. Compiling for the first time..."
@@ -55,6 +54,11 @@ check_and_compile_source() {
         if [ $? -ne 0 ]; then error "Failed to clone repository."; exit 1; fi
 
         cd "$SRC_PATH/"
+
+        # --- THE FIX: Remove CPU-specific optimizations for ARM/other architectures ---
+        info "Applying compatibility patch to Makefile for this server's CPU architecture..."
+        sed -i 's/-mpclmul -march=core2 -mfpmath=sse -mssse3//g' Makefile
+
         info "Compiling source..."
         make
         if [ $? -ne 0 ]; then error "Compilation failed."; exit 1; fi
@@ -74,12 +78,12 @@ get_proxy_list() {
     ls -d ${PROXY_BASE_DIR}/*/ 2>/dev/null | xargs -n 1 basename 2>/dev/null || echo ""
 }
 
-# --- Menu Functions (Unchanged) ---
+# --- Menu Functions ---
 
 show_main_menu() {
     clear
     echo -e "${CY}╔══════════════════════════════════════╗${NC}"
-    echo -e "${CY}║ MTProto Proxy Manager v5.0 (C Ver.)  ║${NC}"
+    echo -e "${CY}║ MTProto Proxy Manager v5.1 (C Ver.)  ║${NC}"
     echo -e "${CY}╚══════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${BL}1)${NC} Manage Existing Proxies"
@@ -137,7 +141,7 @@ show_proxy_submenu() {
     done
 }
 
-# --- Proxy Action Functions (MODIFIED FOR C VERSION) ---
+# --- Proxy Action Functions ---
 
 create_new_proxy() {
     clear
@@ -233,6 +237,7 @@ view_proxy_details() {
     clear; echo -e "${CY}--- Details for ${SELECTED_PROXY} ---${NC}";
     cat "${PROXY_BASE_DIR}/${SELECTED_PROXY}/info.txt"; press_enter_to_continue;
 }
+
 manage_proxy_service() {
     clear; echo -e "${CY}--- Manage Service for ${SELECTED_PROXY} ---${NC}";
     echo -e "${BL}1)${NC} Start\n${BL}2)${NC} Stop\n${BL}3)${NC} Restart\n${BL}4)${NC} View Status/Logs\n"
