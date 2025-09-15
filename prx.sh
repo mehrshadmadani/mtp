@@ -226,11 +226,13 @@ create_systemd_service() {
     local proxy_dir="${PROXY_BASE_DIR}/${proxy_name}"
     local REL_DIR="${SRC_PATH}/_build/prod/rel/mtp_proxy"
 
+    # Automatically find the Erlang Runtime System (erts) version directory
     local ERTS_DIR=$(find "${REL_DIR}/erts-"* -maxdepth 0 -type d | head -n 1)
     if [ -z "$ERTS_DIR" ]; then
         error "Could not find Erlang runtime directory (erts-*) in ${REL_DIR}"; return 1
     fi
 
+    # Automatically find the release version from the release data file
     local RELEASE_VSN=$(cat "${REL_DIR}/releases/start_erl.data" | cut -d' ' -f2)
     if [ -z "$RELEASE_VSN" ]; then
         error "Could not find release version from start_erl.data file"; return 1
@@ -246,6 +248,9 @@ Type=simple
 WorkingDirectory=${proxy_dir}
 # Set the BINDIR environment variable required by erlexec
 Environment="BINDIR=${ERTS_DIR}/bin"
+# --- FINAL WORKAROUND ---
+# Add a random startup delay to prevent race conditions on boot
+ExecStartPre=/bin/sleep \$((RANDOM % 10 + 5))
 # Bypass the wrapper script and call erlexec directly
 ExecStart=${ERTS_DIR}/bin/erlexec -noinput +Bd \\
     -boot ${REL_DIR}/releases/${RELEASE_VSN}/start \\
