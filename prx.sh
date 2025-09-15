@@ -405,7 +405,7 @@ do_build_config() {
     info "Interactively generating config-file for ${CY}${PROXY_NAME}${NC}"
     
     # Declare local variables
-    local PORT SECRET TAG TLS_ONLY="n" TLS_DOMAIN="" yn domain_input
+    local PORT SECRET TAG DD_ONLY="n" TLS_ONLY="n" TLS_DOMAIN="" yn domain_input
     
     read -p "Enter port number (e.g., 443): " PORT < /dev/tty
     read -p "Enter 32-char hex secret (or press Enter to generate random): " SECRET < /dev/tty
@@ -415,31 +415,50 @@ do_build_config() {
     fi
     read -p "Enter your ad tag (or press Enter for none): " TAG < /dev/tty
     
+    # --- FIX 1: Ask for DD-ONLY mode ---
+    read -p "Enable dd-only mode? (recommended) [Y/n] " yn < /dev/tty
+    if [[ ! "$yn" =~ ^[nN]$ ]]; then
+        DD_ONLY="y"
+        info "Using dd-only mode"
+    else
+        warn "dd-only mode disabled"
+    fi
+
+    # --- Ask for FAKE-TLS mode ---
     read -p "Enable Fake-TLS mode? (recommended) [Y/n] " yn < /dev/tty
     if [[ ! "$yn" =~ ^[nN]$ ]]; then
       TLS_ONLY="y"
-      TLS_DOMAIN="www.google.com"
-      read -p "Enter a VALID Fake-TLS domain [${TLS_DOMAIN}]: " domain_input < /dev/tty
+      TLS_DOMAIN="www.google.com" # Default domain
+      read -p "Enter a Fake-TLS domain [${TLS_DOMAIN}]: " domain_input < /dev/tty
       [[ -n "$domain_input" ]] && TLS_DOMAIN=$domain_input
+      info "Using '${TLS_DOMAIN}' for fake-TLS"
     fi
 
-    # --- VALIDATION (BUG IS FIXED HERE with a more robust method) ---
-    local domain_pattern='^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,6}$'
+    # --- Basic Validation (Domain validation is removed) ---
     if ! [[ ${PORT} -gt 0 && ${PORT} -lt 65535 ]]; then error "Invalid port"; return 1; fi
     if ! [[ "$SECRET" =~ ^[[:xdigit:]]{32}$ ]]; then error "Invalid secret"; return 1; fi
     if ! [[ -z "$TAG" || "$TAG" =~ ^[[:xdigit:]]{32}$ ]]; then error "Invalid tag"; return 1; fi
-    # if [[ "$TLS_ONLY" == "y" && ! "$TLS_DOMAIN" =~ $domain_pattern ]]; then error "Invalid Fake-TLS domain: ${TLS_DOMAIN}"; return 1; fi
-
-    local PROTO_ARG='{allowed_protocols, [mtp_secure]},'
-    if [ "$TLS_ONLY" == "y" ]; then
+    
+    # --- FIX 2: Correctly set protocols based on user choice ---
+    local PROTO_ARG=""
+    if [ "${DD_ONLY}" == "y" ] && [ "${TLS_ONLY}" == "y" ]; then
         PROTO_ARG='{allowed_protocols, [mtp_fake_tls,mtp_secure]},'
+    elif [ "${DD_ONLY}" == "y" ]; then
+        PROTO_ARG='{allowed_protocols, [mtp_secure]},'
+    elif [ "${TLS_ONLY}" == "y" ]; then
+        PROTO_ARG='{allowed_protocols, [mtp_fake_tls]},'
     fi
     
     echo "PORT=${PORT}
 SECRET=${SECRET}
 TAG=${TAG}
+DD_ONLY=${DD_ONLY}
 TLS_ONLY=${TLS_ONLY}
 TLS_DOMAIN=${TLS_DOMAIN}" | sudo tee "${proxy_dir}/info.txt" > /dev/null
+
+    # Workaround for empty secret/tag for erlang config
+    local ERL_SECRET=${SECRET:-"00000000000000000000000000000000"}
+    local ERL_TAG=${TAG:-""}
 
     sudo bash -c "cat > ${config_path}" << EOL
 %% -*- mode: erlang -*-
@@ -451,8 +470,8 @@ TLS_DOMAIN=${TLS_DOMAIN}" | sudo tee "${proxy_dir}/info.txt" > /dev/null
     [#{name => mtp_handler_1,
        listen_ip => "0.0.0.0",
        port => ${PORT},
-       secret => <<"${SECRET}">>,
-       tag => <<"${TAG}">>}
+       secret => <<"${ERL_SECRET}">>,
+       tag => <<"${ERL_TAG}">>}
     ]}
    ]},
  {lager,
@@ -465,6 +484,11 @@ TLS_DOMAIN=${TLS_DOMAIN}" | sudo tee "${proxy_dir}/info.txt" > /dev/null
 ].
 EOL
     info "Config generated successfully."
+}
+
+# This is a helper function that might be missing in your script. Add it somewhere outside other functions.
+to_hex() {
+    od -A n -t x1 -w128 | sed 's/ //g'
 }
 
 do_print_links() {
