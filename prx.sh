@@ -225,7 +225,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${SRC_PATH}
-ExecStart=${PROXY_EXECUTABLE} --config=${PROXY_BASE_DIR}/${proxy_name}/prod-sys.config --args=${PROXY_BASE_DIR}/${proxy_name}/prod-vm.args
+ExecStart=${PROXY_EXECUTABLE} foreground --config=${PROXY_BASE_DIR}/${proxy_name}/prod-sys.config --args=${PROXY_BASE_DIR}/${proxy_name}/prod-vm.args
 Restart=always
 RestartSec=5
 
