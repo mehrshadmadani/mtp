@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTProto Proxy Multi-Instance Manager v6.0 (Final)
+# MTProto Proxy Multi-Instance Manager v7.0 (Final)
 # Manages multiple instances of mtproto-proxy from https://github.com/seriyps/mtproto_proxy
 #
 
@@ -105,7 +105,7 @@ get_proxy_list() {
 show_main_menu() {
     clear
     echo -e "${CY}╔══════════════════════════════════════╗${NC}"
-    echo -e "${CY}║     MTProto Proxy Manager v6.0       ║${NC}"
+    echo -e "${CY}║     MTProto Proxy Manager v7.0       ║${NC}"
     echo -e "${CY}╚══════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${BL}1)${NC} Manage Existing Proxies"
@@ -257,9 +257,8 @@ create_systemd_service() {
     info "Creating systemd service file at ${service_path}"
 
     local proxy_dir="${PROXY_BASE_DIR}/${proxy_name}"
-    local proxy_user="mtp-${proxy_name}" # --- NEW: Define the user again
+    local proxy_user="mtp-${proxy_name}"
     
-    # --- Paths now point to the copied release inside the proxy's directory ---
     local REL_DIR="${proxy_dir}/release"
 
     local ERTS_DIR=$(find "${REL_DIR}/erts-"* -maxdepth 0 -type d | head -n 1)
@@ -279,9 +278,11 @@ After=network.target
 
 [Service]
 Type=simple
-# --- NEW & CRITICAL: Run the service as the dedicated, non-root user ---
 User=${proxy_user}
 Group=${proxy_user}
+
+# --- THE FINAL FIX: Set the HOME environment variable for the service ---
+Environment="HOME=${proxy_dir}"
 
 WorkingDirectory=${proxy_dir}
 Environment="BINDIR=${ERTS_DIR}/bin"
