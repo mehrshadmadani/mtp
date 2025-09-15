@@ -84,7 +84,6 @@ show_main_menu() {
     echo -e "${BL}6)${NC} Delete Proxy"
     echo -e "${BL}7)${NC} Exit"
     echo ""
-    echo -n "Choose option [1-7]: "
 }
 
 list_all_proxies() {
@@ -483,7 +482,8 @@ else
 
     while true; do
         show_main_menu
-        read choice
+        # خط زیر جایگزین شده است
+        read -p "Choose option [1-7]: " choice < /dev/tty
         case $choice in
             1) list_all_proxies ;;
             2) create_new_proxy ;;
@@ -495,4 +495,3 @@ else
             *) echo -e "${RED}Invalid option!${NC}"; sleep 1 ;;
         esac
     done
-fi
