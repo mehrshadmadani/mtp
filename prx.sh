@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTProto Proxy Multi-Instance Manager v2.3
+# MTProto Proxy Multi-Instance Manager v2.1
 # Manages multiple instances of mtproto-proxy from https://github.com/seriyps/mtproto_proxy
 #
 
@@ -218,6 +218,22 @@ create_systemd_service() {
     info "Creating systemd service file at ${service_path}"
 
     local proxy_dir="${PROXY_BASE_DIR}/${proxy_name}"
+    local REL_DIR="${SRC_PATH}/_build/prod/rel/mtp_proxy"
+
+    # Automatically find the Erlang Runtime System (erts) version directory
+    # This makes the script robust against future updates
+    local ERTS_DIR=$(find "${REL_DIR}/erts-"* -maxdepth 0 -type d | head -n 1)
+    if [ -z "$ERTS_DIR" ]; then
+        error "Could not find Erlang runtime directory (erts-*) in ${REL_DIR}"
+        return 1
+    fi
+
+    # Automatically find the release version from the release data file
+    local RELEASE_VSN=$(cat "${REL_DIR}/releases/start_erl.data" | cut -d' ' -f2)
+    if [ -z "$RELEASE_VSN" ]; then
+        error "Could not find release version from start_erl.data file"
+        return 1
+    fi
 
     sudo bash -c "cat > ${service_path}" << EOL
 [Unit]
@@ -227,12 +243,16 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${proxy_dir}
-# --- FINAL FIX IS HERE ---
-# Use Environment variables to force loading the correct config files
-Environment="RELX_VM_ARGS_FILE=${proxy_dir}/prod-vm.args"
-Environment="RELX_SYS_CONFIG_FILE=${proxy_dir}/prod-sys.config"
-# The executable now only needs the 'foreground' command
-ExecStart=${PROXY_EXECUTABLE} foreground
+# --- FINAL, DIRECT EXECUTION FIX ---
+# Bypass the wrapper script and call erlexec directly with our unique config files.
+# The backslashes (\) are for splitting the long command into multiple lines.
+ExecStart=${ERTS_DIR}/bin/erlexec -noinput +Bd \\
+    -boot ${REL_DIR}/releases/${RELEASE_VSN}/start \\
+    -mode embedded \\
+    -boot_var SYSTEM_LIB_DIR ${REL_DIR}/lib \\
+    -config ${proxy_dir}/prod-sys.config \\
+    -args_file ${proxy_dir}/prod-vm.args \\
+    -- foreground
 Restart=always
 RestartSec=5
 
