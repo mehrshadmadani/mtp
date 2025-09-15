@@ -82,9 +82,12 @@ check_and_compile_source() {
         # 2. Compile the source
         cd "$SRC_PATH/"
 
-        # --- NEW FIX FOR ARM ARCHITECTURE ---
+        # --- NEW FIX FOR ARM ARCHITECTURE (v2) ---
         info "Applying patch for compatibility with ARM and other architectures..."
+        # Patch 1: Remove generic x86 optimization flags from the main CFLAGS.
         sed -i 's/-mpclmul -march=core2 -mfpmath=sse -mssse3//g' Makefile
+        # Patch 2: Force software-based CRC32C instead of the hardware-accelerated SSE4.2 version.
+        sed -i 's/CRC32C_IMPL:=sse42_clmul/#CRC32C_IMPL:=sse42_clmul/g' Makefile
         # --- END OF FIX ---
 
         info "Compiling source code..."
