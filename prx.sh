@@ -292,9 +292,9 @@ create_new_proxy() {
         return
     fi
 
-    # Generate vm.args file
-    echo "-name mtproto-proxy@127.0.0.1
--setcookie mtproto-proxy
+# Generate vm.args file with a UNIQUE name and cookie for each proxy
+echo "-name ${PROXY_NAME}@127.0.0.1
+-setcookie ${PROXY_NAME}_cookie
 +K true
 +P 134217727
 -env ERL_MAX_ETS_TABLES 4096" | sudo tee "${proxy_dir}/prod-vm.args" > /dev/null
