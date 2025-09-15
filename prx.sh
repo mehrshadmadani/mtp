@@ -470,6 +470,8 @@ if [ "$#" -gt 0 ]; then
     CMD="$1"
 fi
 
+# ... (کدهای قبلی اسکریپت) ...
+
 if [[ -z $IS_MENU_MODE ]]; then
     # --- LEGACY COMMAND-LINE MODE ---
     error "Legacy command-line mode is deprecated. Please use the interactive menu."
