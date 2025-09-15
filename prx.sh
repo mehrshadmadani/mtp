@@ -258,7 +258,7 @@ ExecStart=${ERTS_DIR}/bin/erlexec -noinput +Bd \\
     -boot ${REL_DIR}/releases/${RELEASE_VSN}/start \\
     -mode embedded \\
     -boot_var SYSTEM_LIB_DIR ${REL_DIR}/lib \\
-    -config ${proxy_dir}/prod-sys.config \\
+    -config ${REL_DIR}/releases/${RELEASE_VSN}/sys.config \\
     -args_file ${proxy_dir}/prod-vm.args \\
     -- foreground
 Restart=always
@@ -399,10 +399,19 @@ do_build() {
     make || return 1
 }
 
+
 do_build_config() {
     local proxy_dir=$1
-    local config_path="${proxy_dir}/prod-sys.config"
-    info "Interactively generating config-file for ${CY}${PROXY_NAME}${NC}"
+    # --- NEW: Find the correct config path inside the release directory ---
+    local REL_DIR="${proxy_dir}/release"
+    local RELEASE_VSN=$(cat "${REL_DIR}/releases/start_erl.data" | cut -d' ' -f2)
+    if [ -z "$RELEASE_VSN" ]; then
+        error "Could not find release version in proxy's own directory"; return 1
+    fi
+    local config_path="${REL_DIR}/releases/${RELEASE_VSN}/sys.config"
+    # The config file MUST be named sys.config for the Erlang release to pick it up automatically.
+    
+    info "Interactively generating config-file for ${CY}${PROXY_NAME}${NC} at ${config_path}"
     
     local PORT SECRET TAG DD_ONLY="n" TLS_ONLY="n" TLS_DOMAIN="" yn domain_input
     
@@ -451,6 +460,7 @@ TLS_DOMAIN=${TLS_DOMAIN}" | sudo tee "${proxy_dir}/info.txt" > /dev/null
     local ERL_SECRET=${SECRET:-"00000000000000000000000000000000"}
     local ERL_TAG=${TAG:-""}
 
+    # --- CHANGE: Use the correct config_path variable ---
     sudo bash -c "cat > ${config_path}" << EOL
 %% -*- mode: erlang -*-
 [
@@ -477,6 +487,7 @@ EOL
     info "Config generated successfully."
     return 0
 }
+
 
 # --- Main Execution Logic ---
 main() {
