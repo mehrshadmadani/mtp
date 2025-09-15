@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTProto Proxy Multi-Instance Manager v2.1
+# MTProto Proxy Multi-Instance Manager v2.3
 # Manages multiple instances of mtproto-proxy from https://github.com/seriyps/mtproto_proxy
 #
 
@@ -217,8 +217,6 @@ create_systemd_service() {
     local service_path="/etc/systemd/system/mtproto-proxy-${proxy_name}.service"
     info "Creating systemd service file at ${service_path}"
 
-    # --- FIX IS HERE ---
-    # The WorkingDirectory is now the proxy's own unique directory
     local proxy_dir="${PROXY_BASE_DIR}/${proxy_name}"
 
     sudo bash -c "cat > ${service_path}" << EOL
@@ -229,7 +227,12 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${proxy_dir}
-ExecStart=${PROXY_EXECUTABLE} foreground --config=${proxy_dir}/prod-sys.config --args=${proxy_dir}/prod-vm.args
+# --- FINAL FIX IS HERE ---
+# Use Environment variables to force loading the correct config files
+Environment="RELX_VM_ARGS_FILE=${proxy_dir}/prod-vm.args"
+Environment="RELX_SYS_CONFIG_FILE=${proxy_dir}/prod-sys.config"
+# The executable now only needs the 'foreground' command
+ExecStart=${PROXY_EXECUTABLE} foreground
 Restart=always
 RestartSec=5
 
