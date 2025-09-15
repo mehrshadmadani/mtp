@@ -408,12 +408,12 @@ do_build_config() {
       [[ -n "$domain_input" ]] && TLS_DOMAIN=$domain_input
     fi
 
-    # --- VALIDATION (BUG FIX IS HERE) ---
+    # --- VALIDATION (BUG IS FIXED HERE with a more robust method) ---
+    local domain_pattern='^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,6}$'
     if ! [[ ${PORT} -gt 0 && ${PORT} -lt 65535 ]]; then error "Invalid port"; return 1; fi
-    if ! [[ -n "$(echo "$SECRET" | grep -x '[[:xdigit:]]\{32\}')" ]]; then error "Invalid secret"; return 1; fi
-    if ! [[ -z "$TAG" || -n "$(echo "$TAG" | grep -x '[[:xdigit:]]\{32\}')" ]]; then error "Invalid tag"; return 1; fi
-    # ADDED THIS LINE TO VALIDATE THE DOMAIN
-    if [[ "$TLS_ONLY" == "y" && -z "$(echo "$TLS_DOMAIN" | grep -oE '^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,6}$')")" ]]; then error "Invalid Fake-TLS domain: ${TLS_DOMAIN}"; return 1; fi
+    if ! [[ "$SECRET" =~ ^[[:xdigit:]]{32}$ ]]; then error "Invalid secret"; return 1; fi
+    if ! [[ -z "$TAG" || "$TAG" =~ ^[[:xdigit:]]{32}$ ]]; then error "Invalid tag"; return 1; fi
+    if [[ "$TLS_ONLY" == "y" && ! "$TLS_DOMAIN" =~ $domain_pattern ]]; then error "Invalid Fake-TLS domain: ${TLS_DOMAIN}"; return 1; fi
 
     local PROTO_ARG='{allowed_protocols, [mtp_secure]},'
     if [ "$TLS_ONLY" == "y" ]; then
