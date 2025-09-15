@@ -250,7 +250,7 @@ WorkingDirectory=${proxy_dir}
 Environment="BINDIR=${ERTS_DIR}/bin"
 # --- FINAL WORKAROUND ---
 # Add a random startup delay to prevent race conditions on boot
-ExecStartPre=/bin/sleep \$((RANDOM % 10 + 5))
+ExecStartPre=/bin/sh -c 'sleep \$((RANDOM %% 10 + 5))'
 # Bypass the wrapper script and call erlexec directly
 ExecStart=${ERTS_DIR}/bin/erlexec -noinput +Bd \\
     -boot ${REL_DIR}/releases/${RELEASE_VSN}/start \\
