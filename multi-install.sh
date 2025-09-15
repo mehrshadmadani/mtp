@@ -1,12 +1,12 @@
 #!/bin/bash
 #
-# MTProto Proxy Multi-Instance Installer (v2 - Bug Fixed)
+# MTProto Proxy Multi-Instance Installer (v3 - Final Correct Version)
+# This version mimics the original script's manual installation logic.
 #
 
 # --- Colors ---
 RED='\033[0;31m'
 GR='\033[0;32m'
-YE='\033[0;33m'
 NC='\033[0m'
 
 # --- Helper Functions ---
@@ -19,46 +19,40 @@ error() {
 }
 
 # --- Main Logic ---
-if [ "$EUID" -ne 0 ]; then
-    error "Please run this script with sudo or as root."
-fi
-
+if [ "$EUID" -ne 0 ]; then error "Please run this script with sudo or as root."; fi
 if [ -z "$1" ]; then
     echo "Usage: $0 <proxy_name>"
     echo "Example: $0 MyProxy1"
     exit 1
 fi
 
+set -e # Exit immediately if a command exits with a non-zero status.
+
 PROXY_NAME="$1"
 SERVICE_NAME="mtproto-proxy-${PROXY_NAME}"
 INSTALL_DIR="/opt/mtp_proxy_${PROXY_NAME}"
 USER_NAME="mtp-user-${PROXY_NAME}"
-SRC_DIR="mtproto_proxy_source_${PROXY_NAME}"
+LOG_DIR="/var/log/${SERVICE_NAME}"
+SRC_DIR="mtproto_proxy_source_temp"
 
 info "Starting installation for proxy: ${PROXY_NAME}"
 
-# --- 1. Cleanup previous source attempts ---
+# --- 1. Cleanup, Dependencies, Get Source ---
 rm -rf "${SRC_DIR}" mtproto_proxy.tar.gz
-
-# --- 2. Install Dependencies ---
 info "Installing dependencies..."
 apt-get update > /dev/null
 apt-get install -y erlang-nox erlang-dev make sed diffutils tar curl > /dev/null
 timedatectl set-ntp on
-
-# --- 3. Get Source Code ---
 info "Downloading source code..."
-curl -L https://github.com/seriyps/mtproto_proxy/archive/master.tar.gz -o mtproto_proxy.tar.gz
+curl -sL https://github.com/seriyps/mtproto_proxy/archive/master.tar.gz -o mtproto_proxy.tar.gz
 tar -xaf mtproto_proxy.tar.gz
 mv mtproto_proxy-master "${SRC_DIR}"
 cd "${SRC_DIR}"
 
-# --- 4. Get User Configuration ---
+# --- 2. Get User Configuration ---
 read -p "Enter port number for '${PROXY_NAME}': " PORT
 read -p "Enter 32-char hex secret (or press Enter for random): " SECRET
-if [ -z "$SECRET" ]; then
-    SECRET=$(head -c 16 /dev/urandom | od -A n -t x1 | tr -d ' \n')
-fi
+if [ -z "$SECRET" ]; then SECRET=$(head -c 16 /dev/urandom | od -A n -t x1 | tr -d ' \n'); fi
 read -p "Enter your ad tag (or press Enter for none): " TAG
 read -p "Enable Fake-TLS mode? (recommended) [Y/n] " yn_tls
 TLS_DOMAIN="www.google.com"
@@ -67,11 +61,10 @@ if [[ ! "$yn_tls" =~ ^[nN]$ ]]; then
     [[ -n "$domain_input" ]] && TLS_DOMAIN=$domain_input
 fi
 
-# --- 5. Generate Erlang Config ---
-info "Generating configuration..."
+# --- 3. Compile ---
+info "Generating configuration and compiling source..."
 PROTO_ARG='{allowed_protocols, [mtp_fake_tls,mtp_secure]},'
 ERL_TAG=${TAG:-""}
-
 cat > config/prod-sys.config << EOL
 %% -*- mode: erlang -*-
 [
@@ -86,37 +79,50 @@ cat > config/prod-sys.config << EOL
        tag => <<"${ERL_TAG}">>}
     ]}
    ]},
- {lager, [{log_root, "/var/log/${SERVICE_NAME}"}]}
+ {lager, [{log_root, "${LOG_DIR}"}]}
 ].
 EOL
-
-# --- 6. Modify the Makefile and Service file for multi-instance support ---
-info "Customizing installation for '${PROXY_NAME}'..."
-# Change install path in Makefile
-sed -i "s|/opt/mtp_proxy|${INSTALL_DIR}|g" Makefile
-# Change service name and user in the service template
-sed -i "s|mtproto-proxy.service|${SERVICE_NAME}.service|g" Makefile
-sed -i "s|Description=MTProto proxy server|Description=MTProto proxy server for ${PROXY_NAME}|g" config/mtproto-proxy.service
-sed -i "s|User=mtproto-proxy|User=${USER_NAME}|g" config/mtproto-proxy.service
-sed -i "s|/var/log/mtproto-proxy|/var/log/${SERVICE_NAME}|g" config/mtproto-proxy.service
-
-# --- THE BUG FIX: Rename the service file before installing ---
-mv config/mtproto-proxy.service "config/${SERVICE_NAME}.service"
-
-# --- 7. Compile and Install ---
-info "Compiling source code..."
 make
-info "Creating user '${USER_NAME}' and installing..."
-useradd --system --no-create-home --shell /bin/false "${USER_NAME}" || true
-make install
 
-# --- 8. Start the service ---
+# --- 4. Manual Installation (The Correct Way) ---
+info "Creating user and installing files manually..."
+systemctl stop "${SERVICE_NAME}" > /dev/null 2>&1 || true
+useradd --system --no-create-home --shell /bin/false "${USER_NAME}" || true
+mkdir -p "${INSTALL_DIR}"
+cp -r "_build/prod/rel/mtp_proxy/"* "${INSTALL_DIR}/"
+mkdir -p "${LOG_DIR}"
+chown -R "${USER_NAME}":"${USER_NAME}" "${LOG_DIR}"
+chown -R "${USER_NAME}":"${USER_NAME}" "${INSTALL_DIR}"
+
+# --- 5. Create and Install Service File ---
+info "Creating systemd service file..."
+cat > "${SERVICE_NAME}.service" << EOL
+[Unit]
+Description=MTProto proxy server for ${PROXY_NAME}
+After=network.target
+
+[Service]
+Type=simple
+User=${USER_NAME}
+Group=${USER_NAME}
+WorkingDirectory=${INSTALL_DIR}
+ExecStart=${INSTALL_DIR}/bin/mtp_proxy foreground
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOL
+install -D "${SERVICE_NAME}.service" "/etc/systemd/system/${SERVICE_NAME}.service"
+
+# --- 6. Start the service ---
 info "Enabling and starting service: ${SERVICE_NAME}"
+systemctl daemon-reload
 systemctl enable "${SERVICE_NAME}"
 systemctl start "${SERVICE_NAME}"
 sleep 3
 
-# --- 9. Final Check and Cleanup ---
+# --- 7. Final Check and Cleanup ---
 cd ..
 rm -rf "${SRC_DIR}" mtproto_proxy.tar.gz
 
