@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTProto Proxy Multi-Instance Manager v4.0 (Final)
+# MTProto Proxy Multi-Instance Manager v5.0 (Final)
 # Manages multiple instances of mtproto-proxy from https://github.com/seriyps/mtproto_proxy
 #
 
@@ -83,6 +83,17 @@ check_and_compile_source() {
         fi
         info "Source code compiled successfully."
     fi
+    
+    # --- ADD THIS SECTION ---
+    # Manually download the latest proxy secrets/configs from Telegram
+    info "Downloading latest Telegram server configurations..."
+    local TELEGRAM_CONFIG_PATH="${SRC_PATH}/_build/prod/rel/mtp_proxy/etc/proxy-multi.conf"
+    if curl -s https://core.telegram.org/getProxyConfig -o "${TELEGRAM_CONFIG_PATH}"; then
+        info "Telegram configurations updated successfully."
+    else
+        warn "Could not download Telegram server configurations. Proxy might fail to connect."
+    fi
+    # --- END OF ADDED SECTION ---
 }
 
 get_proxy_list() {
@@ -94,7 +105,7 @@ get_proxy_list() {
 show_main_menu() {
     clear
     echo -e "${CY}╔══════════════════════════════════════╗${NC}"
-    echo -e "${CY}║     MTProto Proxy Manager v4.0       ║${NC}"
+    echo -e "${CY}║     MTProto Proxy Manager v5.0       ║${NC}"
     echo -e "${CY}╚══════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${BL}1)${NC} Manage Existing Proxies"
